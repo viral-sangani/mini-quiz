@@ -30,9 +30,6 @@ export default function LandingPage() {
           </span>
           <span aria-hidden>🏆</span>
         </div>
-        <div className="-mt-5 text-xs font-bold text-duo-gray-dark sm:text-sm">
-          Top 10 win — 50 · 25 · 15 · 5 × 7
-        </div>
 
         <LandingActions />
 

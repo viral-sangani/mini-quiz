@@ -714,9 +714,6 @@ function PlayInner() {
             <div className="font-display text-3xl font-black text-duo-ink">
               $125 <span className="text-lg">in USDT</span>
             </div>
-            <div className="mt-1 text-xs font-bold text-duo-ink/80">
-              Top 10 win · 50 · 25 · 15 · 5 × 7
-            </div>
           </div>
           <div className="mt-4 text-xs font-semibold text-duo-gray-dark">
             Room {roomId} · Playing as{" "}
