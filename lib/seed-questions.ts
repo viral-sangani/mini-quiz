@@ -19,7 +19,7 @@ export const SEED_QUESTIONS: SeedQuestion[] = [
   {
     prompt: "Where did MiniPay launch first?",
     choices: [
-      { id: "a", label: "Inside the Opera browser" },
+      { id: "a", label: "Inside the Opera Mini browser" },
       { id: "b", label: "As an Apple Watch app" },
       { id: "c", label: "As a Telegram bot" },
       { id: "d", label: "As a desktop Chrome extension" },
@@ -41,7 +41,7 @@ export const SEED_QUESTIONS: SeedQuestion[] = [
     choices: [
       { id: "a", label: "Only USDC" },
       { id: "b", label: "Only USDT" },
-      { id: "c", label: "USDC, USDT, and local stablecoins" },
+      { id: "c", label: "USDC, USDT and USDm" },
       { id: "d", label: "Only Bitcoin" },
     ],
     correctChoiceId: "c",
