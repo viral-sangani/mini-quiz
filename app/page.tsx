@@ -23,6 +23,17 @@ export default function LandingPage() {
           </p>
         </div>
 
+        <div className="inline-flex items-center gap-3 rounded-full border-2 border-duo-yellow bg-gradient-to-r from-duo-yellow to-celo-yellow px-5 py-3 font-display text-base font-black uppercase tracking-wide text-duo-ink shadow-3d-yellow sm:text-lg">
+          <span aria-hidden>💰</span>
+          <span>
+            <span className="text-xl sm:text-2xl">$125</span> in USDT prizes
+          </span>
+          <span aria-hidden>🏆</span>
+        </div>
+        <div className="-mt-5 text-xs font-bold text-duo-gray-dark sm:text-sm">
+          Top 10 win — 50 · 25 · 15 · 5 × 7
+        </div>
+
         <LandingActions />
 
         <footer className="pt-10 text-xs font-semibold text-duo-gray-dark">

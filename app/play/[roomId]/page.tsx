@@ -707,6 +707,17 @@ function PlayInner() {
               {playerCount} {playerCount === 1 ? "player" : "players"} in room
             </span>
           </div>
+          <div className="mt-5 rounded-2xl border-2 border-duo-yellow bg-gradient-to-br from-duo-yellow to-celo-yellow p-4 shadow-3d-yellow">
+            <div className="text-[11px] font-black uppercase tracking-widest text-duo-ink/70">
+              Playing for
+            </div>
+            <div className="font-display text-3xl font-black text-duo-ink">
+              $125 <span className="text-lg">in USDT</span>
+            </div>
+            <div className="mt-1 text-xs font-bold text-duo-ink/80">
+              Top 10 win · 50 · 25 · 15 · 5 × 7
+            </div>
+          </div>
           <div className="mt-4 text-xs font-semibold text-duo-gray-dark">
             Room {roomId} · Playing as{" "}
             <span className="font-black text-duo-ink">{name}</span>
