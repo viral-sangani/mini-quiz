@@ -9,7 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "better-sqlite3": "^11.3.0",
     "canvas-confetti": "^1.9.3",
     "framer-motion": "^11.11.0",
     "nanoid": "^5.0.7",
@@ -20,7 +19,6 @@
     "viem": "^2.21.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
     "@types/canvas-confetti": "^1.6.4",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.5",

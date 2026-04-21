@@ -1,5 +1,5 @@
 import { subscribe, type RoomEvent } from "@/lib/events";
-import { getDb } from "@/lib/db";
+import { getRoom } from "@/lib/db";
 import { getLeaderboard } from "@/lib/leaderboard";
 
 export const runtime = "nodejs";
@@ -8,10 +8,7 @@ export const dynamic = "force-dynamic";
 type Params = { params: { id: string } };
 
 export async function GET(req: Request, { params }: Params) {
-  const db = getDb();
-  const room = db.prepare(`SELECT id, status FROM rooms WHERE id = ?`).get(params.id) as
-    | { id: string; status: string }
-    | undefined;
+  const room = getRoom(params.id);
   if (!room) return new Response("Room not found", { status: 404 });
 
   const encoder = new TextEncoder();
@@ -31,7 +28,6 @@ export async function GET(req: Request, { params }: Params) {
         safeEnqueue(`data: ${JSON.stringify(event)}\n\n`);
       };
 
-      // Initial snapshot
       safeEnqueue(`: connected\n\n`);
       send({ type: "leaderboard", rows: getLeaderboard(params.id) });
 

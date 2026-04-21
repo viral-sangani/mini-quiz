@@ -1,24 +1,32 @@
-import { getDb } from "./db";
+import { answersForPlayer, playersInRoom } from "./db";
 import type { LeaderboardRow } from "./events";
 
 export function getLeaderboard(roomId: string): LeaderboardRow[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT
-        p.id AS playerId,
-        p.name AS name,
-        p.address AS address,
-        COALESCE(SUM(a.points), 0) AS points,
-        COALESCE(SUM(a.is_correct), 0) AS correctCount,
-        COUNT(a.id) AS answeredCount,
-        COALESCE(SUM(a.time_taken_ms), 0) AS totalTimeMs
-      FROM players p
-      LEFT JOIN answers a ON a.player_id = p.id
-      WHERE p.room_id = ?
-      GROUP BY p.id
-      ORDER BY points DESC, totalTimeMs ASC, p.joined_at ASC`
-    )
-    .all(roomId) as LeaderboardRow[];
+  const players = playersInRoom(roomId);
+  const rows: LeaderboardRow[] = players.map((p) => {
+    const answers = answersForPlayer(p.id);
+    let points = 0;
+    let correctCount = 0;
+    let totalTimeMs = 0;
+    for (const a of answers) {
+      points += a.points;
+      if (a.isCorrect) correctCount += 1;
+      totalTimeMs += a.timeTakenMs;
+    }
+    return {
+      playerId: p.id,
+      name: p.name,
+      address: p.address,
+      points,
+      correctCount,
+      answeredCount: answers.length,
+      totalTimeMs,
+    };
+  });
+  rows.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (a.totalTimeMs !== b.totalTimeMs) return a.totalTimeMs - b.totalTimeMs;
+    return 0;
+  });
   return rows;
 }
