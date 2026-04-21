@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { BigButton } from "@/components/BigButton";
 import { Countdown } from "@/components/Countdown";
@@ -12,6 +12,12 @@ import { QRDisplay } from "@/components/QRDisplay";
 import type { LeaderboardRow, RoomEvent } from "@/lib/events";
 
 type RoomStatus = "lobby" | "live" | "ended";
+
+// MiniPay deep link — opens this app in the MiniPay in-app browser, prompting
+// users to install MiniPay if they don't have it. Does not carry the room
+// code, so users enter it manually from the projector.
+const MINIPAY_DEEP_LINK =
+  "https://link.minipay.xyz/browse?url=https%3A%2F%2Fopr.as%2F3d6d74&campaign=test&source=other&medium=other";
 
 type Room = {
   id: string;
@@ -87,11 +93,6 @@ export default function HostProjectorPage({
     const t = setTimeout(() => setPodiumDone(true), 8000);
     return () => clearTimeout(t);
   }, [room?.status, podiumDone]);
-
-  const joinUrl = useMemo(() => {
-    if (typeof window === "undefined") return `/play/${roomId}`;
-    return `${window.location.origin}/play/${roomId}`;
-  }, [roomId]);
 
   // Initial hydrate + 2.5s polling fallback. The SSE broker is in-memory
   // per serverless instance, so polling keeps the projector honest even if
@@ -320,7 +321,6 @@ export default function HostProjectorPage({
       {room.status === "lobby" && (
         <LobbyView
           roomId={roomId}
-          joinUrl={joinUrl}
           players={lobbyPlayers}
           playerCount={room.playerCount}
           starting={starting}
@@ -358,7 +358,6 @@ export default function HostProjectorPage({
 
 function LobbyView({
   roomId,
-  joinUrl,
   players,
   playerCount,
   starting,
@@ -367,7 +366,6 @@ function LobbyView({
   copied,
 }: {
   roomId: string;
-  joinUrl: string;
   players: LobbyPlayer[];
   playerCount: number;
   starting: boolean;
@@ -432,10 +430,11 @@ function LobbyView({
         </div>
 
         <div className="flex flex-col items-center gap-4">
-          <QRDisplay url={joinUrl} size={320} />
+          <QRDisplay url={MINIPAY_DEEP_LINK} size={320} />
           <p className="max-w-[360px] text-center text-sm font-semibold text-duo-gray-dark">
-            Scan or visit <span className="font-black text-duo-ink">/join</span>{" "}
-            and enter the code
+            Scan to open in{" "}
+            <span className="font-black text-duo-ink">MiniPay</span>, then enter
+            the room code above
           </p>
         </div>
       </div>
