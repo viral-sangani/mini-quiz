@@ -415,14 +415,14 @@ function LobbyView({
           <button
             type="button"
             onClick={onCopyCode}
-            className="group relative select-none"
+            className="group relative select-none rounded-3xl border-2 border-duo-gray-light bg-white px-8 py-6 shadow-3d-lg transition-transform active:translate-y-0.5 sm:px-12 sm:py-8"
             aria-label="Copy room code"
           >
-            <div className="font-display text-[120px] font-black leading-none tracking-tight text-duo-ink transition-transform group-active:scale-[0.98] sm:text-[160px]">
+            <div className="font-display text-[96px] font-black leading-none tracking-[0.05em] text-duo-ink sm:text-[140px]">
               {roomId}
             </div>
             <div
-              className={`mt-2 text-sm font-bold ${
+              className={`mt-3 text-sm font-bold ${
                 copied ? "text-duo-green" : "text-duo-gray-dark"
               }`}
             >

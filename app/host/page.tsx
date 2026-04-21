@@ -7,16 +7,9 @@ import { BigButton } from "@/components/BigButton";
 import { Mascot } from "@/components/Mascot";
 import { connectAddress, hasInjectedWallet } from "@/lib/minipay";
 import { HOST_ADDRESS, isHostAddress } from "@/lib/host";
+import { SEED_QUESTIONS } from "@/lib/seed-questions";
 
-type Duration = 60_000 | 120_000 | 180_000 | 300_000;
 type QuestionTime = 10_000 | 15_000 | 20_000 | 30_000;
-
-const DURATION_OPTIONS: { label: string; value: Duration }[] = [
-  { label: "1 min", value: 60_000 },
-  { label: "2 min", value: 120_000 },
-  { label: "3 min", value: 180_000 },
-  { label: "5 min", value: 300_000 },
-];
 
 const QUESTION_TIME_OPTIONS: { label: string; value: QuestionTime }[] = [
   { label: "10s", value: 10_000 },
@@ -24,6 +17,18 @@ const QUESTION_TIME_OPTIONS: { label: string; value: QuestionTime }[] = [
   { label: "20s", value: 20_000 },
   { label: "30s", value: 30_000 },
 ];
+
+const BUFFER_MS = 5_000;
+const QUESTION_COUNT = SEED_QUESTIONS.length;
+
+function formatDuration(ms: number): string {
+  const totalSec = Math.round(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m === 0) return `${s}s`;
+  if (s === 0) return `${m} min`;
+  return `${m} min ${s}s`;
+}
 
 function Pill({
   active,
@@ -51,8 +56,8 @@ function Pill({
 
 export default function HostCreatePage() {
   const router = useRouter();
-  const [durationMs, setDurationMs] = useState<Duration>(180_000);
   const [questionTimeMs, setQuestionTimeMs] = useState<QuestionTime>(15_000);
+  const durationMs = QUESTION_COUNT * questionTimeMs + BUFFER_MS;
   const [prizes, setPrizes] = useState<string[]>([
     "50",
     "25",
@@ -171,23 +176,6 @@ export default function HostCreatePage() {
 
         <section className="flex flex-col gap-3 rounded-3xl border-2 border-duo-gray-light bg-white p-6 shadow-card">
           <h2 className="text-sm font-black uppercase tracking-widest text-duo-gray-dark">
-            Total quiz time
-          </h2>
-          <div className="flex flex-wrap gap-3">
-            {DURATION_OPTIONS.map((opt) => (
-              <Pill
-                key={opt.value}
-                active={durationMs === opt.value}
-                onClick={() => setDurationMs(opt.value)}
-              >
-                {opt.label}
-              </Pill>
-            ))}
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-3 rounded-3xl border-2 border-duo-gray-light bg-white p-6 shadow-card">
-          <h2 className="text-sm font-black uppercase tracking-widest text-duo-gray-dark">
             Per-question time
           </h2>
           <div className="flex flex-wrap gap-3">
@@ -201,6 +189,14 @@ export default function HostCreatePage() {
               </Pill>
             ))}
           </div>
+          <p className="text-sm font-semibold text-duo-gray-dark">
+            Total quiz time:{" "}
+            <span className="font-black text-duo-ink">
+              {formatDuration(durationMs)}
+            </span>{" "}
+            ({QUESTION_COUNT} questions × {questionTimeMs / 1000}s +{" "}
+            {BUFFER_MS / 1000}s buffer)
+          </p>
         </section>
 
         <section className="flex flex-col gap-3 rounded-3xl border-2 border-duo-gray-light bg-white p-6 shadow-card">
