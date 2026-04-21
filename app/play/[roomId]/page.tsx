@@ -457,20 +457,39 @@ function PlayInner() {
     return () => clearTimeout(id);
   }, [phase, room?.endsAt]);
 
-  // Poll leaderboard + payouts as a fallback to SSE. Serverless instances
-  // don't share the SSE broker, so a subscriber on one instance won't receive
-  // broadcasts from another. Polling every 2.5s makes the UI self-heal.
+  // Poll room status + leaderboard + payouts as a fallback to SSE. Serverless
+  // instances don't share the SSE broker, so a subscriber on one instance
+  // won't receive broadcasts from another. Polling every 2s makes the UI
+  // self-heal — including the phase transition from waiting_lobby → playing
+  // when the host presses Start on a different serverless instance.
   useEffect(() => {
     if (!playerId) return;
     let cancelled = false;
 
     async function tick() {
       try {
-        const [lbRes, payoutRes] = await Promise.all([
+        const [roomRes, lbRes, payoutRes] = await Promise.all([
+          fetch(`/api/rooms/${roomId}`, { cache: "no-store" }),
           fetch(`/api/rooms/${roomId}/leaderboard`, { cache: "no-store" }),
           fetch(`/api/rooms/${roomId}/payout`, { cache: "no-store" }),
         ]);
         if (cancelled) return;
+
+        if (roomRes.ok) {
+          const roomData = (await roomRes.json()) as RoomInfo;
+          if (!cancelled) {
+            setRoom(roomData);
+            // Drive phase transitions from the authoritative room status.
+            if (roomData.status === "live") {
+              setPhase((p) => (p === "waiting_lobby" ? "playing" : p));
+            } else if (roomData.status === "ended") {
+              setPhase((p) =>
+                p === "waiting_lobby" || p === "playing" ? "finished" : p
+              );
+            }
+          }
+        }
+
         if (lbRes.ok) {
           const data = (await lbRes.json()) as { rows: LeaderboardRow[] };
           if (!cancelled) setLeaderboardRows(data.rows);
@@ -503,7 +522,7 @@ function PlayInner() {
     }
 
     tick();
-    const interval = setInterval(tick, 2500);
+    const interval = setInterval(tick, 2000);
     return () => {
       cancelled = true;
       clearInterval(interval);
