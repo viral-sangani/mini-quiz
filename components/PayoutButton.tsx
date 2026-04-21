@@ -15,7 +15,7 @@ export function PayoutButton({
   amount,
 }: {
   roomId: string;
-  rank: 1 | 2 | 3;
+  rank: number;
   playerId: string;
   toAddress: string | null;
   amount: string;

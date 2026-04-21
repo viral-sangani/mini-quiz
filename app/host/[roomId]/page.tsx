@@ -581,6 +581,7 @@ function EndedView({
   onPodiumReveal: () => void;
 }) {
   const top3 = rows.slice(0, 3);
+  const winners = rows.slice(0, Math.min(10, prizeAmounts.length));
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8">
@@ -635,22 +636,23 @@ function EndedView({
               Payout ceremony 💸
             </h2>
             <div className="flex flex-col gap-4">
-              {top3.length === 0 && (
+              {winners.length === 0 && (
                 <div className="py-6 text-center font-bold text-duo-gray-dark">
                   No winners to pay out.
                 </div>
               )}
-              {top3.map((row, idx) => {
-                const rank = (idx + 1) as 1 | 2 | 3;
+              {winners.map((row, idx) => {
+                const rank = idx + 1;
                 const amount = prizeAmounts[idx] ?? "0";
-                const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : "🥉";
+                const medal =
+                  rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`;
                 return (
                   <div
                     key={row.playerId}
                     className="flex flex-col gap-2 rounded-2xl border-2 border-duo-gray-light bg-duo-cream p-3"
                   >
                     <div className="flex min-w-0 items-center gap-2 text-sm font-extrabold text-duo-ink">
-                      <span className="shrink-0 text-xl">{medal}</span>
+                      <span className="shrink-0 text-base">{medal}</span>
                       <span className="min-w-0 flex-1 truncate" title={row.name}>
                         {row.name}
                       </span>

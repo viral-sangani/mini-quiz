@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_DURATION_MS = 3 * 60 * 1000;
 const DEFAULT_QUESTION_TIME_MS = 15_000;
-const DEFAULT_PRIZES = ["50", "25", "10"];
+const DEFAULT_PRIZES = ["50", "25", "15", "5", "5", "5", "5", "5", "5", "5"];
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {

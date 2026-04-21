@@ -53,9 +53,20 @@ export default function HostCreatePage() {
   const router = useRouter();
   const [durationMs, setDurationMs] = useState<Duration>(180_000);
   const [questionTimeMs, setQuestionTimeMs] = useState<QuestionTime>(15_000);
-  const [prize1, setPrize1] = useState("50");
-  const [prize2, setPrize2] = useState("25");
-  const [prize3, setPrize3] = useState("10");
+  const [prizes, setPrizes] = useState<string[]>([
+    "50",
+    "25",
+    "15",
+    "5",
+    "5",
+    "5",
+    "5",
+    "5",
+    "5",
+    "5",
+  ]);
+  const setPrizeAt = (i: number, v: string) =>
+    setPrizes((prev) => prev.map((p, idx) => (idx === i ? v : p)));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [address, setAddress] = useState<string | null>(null);
@@ -94,7 +105,7 @@ export default function HostCreatePage() {
         body: JSON.stringify({
           durationMs,
           questionTimeMs,
-          prizeAmounts: [prize1, prize2, prize3],
+          prizeAmounts: prizes,
           hostAddress: address,
         }),
       });
@@ -194,12 +205,22 @@ export default function HostCreatePage() {
 
         <section className="flex flex-col gap-3 rounded-3xl border-2 border-duo-gray-light bg-white p-6 shadow-card">
           <h2 className="text-sm font-black uppercase tracking-widest text-duo-gray-dark">
-            Prize amounts (USDT)
+            Prize amounts (USDT) — top 10
           </h2>
-          <div className="grid grid-cols-3 gap-3">
-            <PrizeInput label="🥇 1st" value={prize1} onChange={setPrize1} />
-            <PrizeInput label="🥈 2nd" value={prize2} onChange={setPrize2} />
-            <PrizeInput label="🥉 3rd" value={prize3} onChange={setPrize3} />
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+            {prizes.map((v, i) => {
+              const rank = i + 1;
+              const label =
+                rank === 1 ? "🥇 1st" : rank === 2 ? "🥈 2nd" : rank === 3 ? "🥉 3rd" : `#${rank}`;
+              return (
+                <PrizeInput
+                  key={i}
+                  label={label}
+                  value={v}
+                  onChange={(nv) => setPrizeAt(i, nv)}
+                />
+              );
+            })}
           </div>
         </section>
 

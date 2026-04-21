@@ -387,6 +387,8 @@ function PlayInner() {
       clearTimeout(advanceTimerRef.current);
       advanceTimerRef.current = null;
     }
+    setSelectedChoiceId(null);
+    setResolving(false);
     if (currentIndex >= questions.length - 1) {
       setPhase("finished");
     } else {
@@ -864,18 +866,14 @@ function PlayInner() {
       </div>
 
       <AnimatePresence>
-        {celebrationPayout && (
+        {celebrationPayout && celebrationPayout.confirmed && (
           <motion.div
-            key={`${celebrationPayout.txHash}-${celebrationPayout.confirmed}`}
+            key={celebrationPayout.txHash}
             initial={{ opacity: 0, scale: 0.8, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ type: "spring", stiffness: 400, damping: 24 }}
-            className={`rounded-3xl border-2 p-5 text-center shadow-3d-lg ${
-              celebrationPayout.confirmed
-                ? "border-duo-green bg-gradient-to-br from-duo-green to-celo-yellow/70 text-white"
-                : "border-duo-yellow bg-gradient-to-br from-duo-yellow to-duo-orange text-duo-ink"
-            }`}
+            className="rounded-3xl border-2 border-duo-green bg-gradient-to-br from-duo-green to-celo-yellow/70 p-5 text-center text-white shadow-3d-lg"
           >
             <div className="font-display text-2xl font-black">
               🎉 You won {formatPrize(celebrationPayout.amount)} USDT!
@@ -886,7 +884,7 @@ function PlayInner() {
               rel="noreferrer"
               className="mt-2 inline-block rounded-full bg-white/90 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-duo-ink shadow-3d-sm"
             >
-              {celebrationPayout.confirmed ? "View on Blockscout ✓" : "Tx pending…"}
+              View on Blockscout ✓
             </a>
           </motion.div>
         )}
