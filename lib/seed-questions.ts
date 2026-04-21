@@ -10,7 +10,7 @@ export const SEED_QUESTIONS: SeedQuestion[] = [
     prompt: "What is MiniPay?",
     choices: [
       { id: "a", label: "A crypto exchange" },
-      { id: "b", label: "A stablecoin wallet built on Celo" },
+      { id: "b", label: "A digital dollar wallet built on Celo" },
       { id: "c", label: "A meme coin" },
       { id: "d", label: "A savings app with no crypto" },
     ],
@@ -37,7 +37,7 @@ export const SEED_QUESTIONS: SeedQuestion[] = [
     correctChoiceId: "b",
   },
   {
-    prompt: "Which of these stablecoins can you hold in MiniPay?",
+    prompt: "Which of these stablecoins does MiniPay support?",
     choices: [
       { id: "a", label: "Only USDC" },
       { id: "b", label: "Only USDT" },
@@ -61,7 +61,7 @@ export const SEED_QUESTIONS: SeedQuestion[] = [
     choices: [
       { id: "a", label: "Around 10,000" },
       { id: "b", label: "Around 500,000" },
-      { id: "c", label: "14 million+" },
+      { id: "c", label: "15 million+" },
       { id: "d", label: "1 billion+" },
     ],
     correctChoiceId: "c",
@@ -71,7 +71,7 @@ export const SEED_QUESTIONS: SeedQuestion[] = [
     choices: [
       { id: "a", label: "2" },
       { id: "b", label: "15" },
-      { id: "c", label: "60+" },
+      { id: "c", label: "66+" },
       { id: "d", label: "195" },
     ],
     correctChoiceId: "c",
