@@ -8,8 +8,10 @@ export const dynamic = "force-dynamic";
 type Params = { params: { id: string } };
 
 export async function GET(req: Request, { params }: Params) {
-  const room = getRoom(params.id);
+  const room = await getRoom(params.id);
   if (!room) return new Response("Room not found", { status: 404 });
+
+  const initialLeaderboard = await getLeaderboard(params.id);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -29,7 +31,7 @@ export async function GET(req: Request, { params }: Params) {
       };
 
       safeEnqueue(`: connected\n\n`);
-      send({ type: "leaderboard", rows: getLeaderboard(params.id) });
+      send({ type: "leaderboard", rows: initialLeaderboard });
 
       const unsub = subscribe(params.id, { send });
 

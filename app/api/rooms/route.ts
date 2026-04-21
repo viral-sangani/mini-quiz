@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
-  const room = createRoom({
+  const room = await createRoom({
     durationMs: body.durationMs ?? DEFAULT_DURATION_MS,
     questionTimeMs: body.questionTimeMs ?? DEFAULT_QUESTION_TIME_MS,
     prizeAmounts: body.prizeAmounts ?? DEFAULT_PRIZES,

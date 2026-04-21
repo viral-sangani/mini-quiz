@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  existingAnswer,
   getPlayer,
   getQuestion,
   getRoom,
@@ -26,24 +25,21 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  const room = getRoom(params.id);
+  const [room, player, question] = await Promise.all([
+    getRoom(params.id),
+    getPlayer(body.playerId),
+    getQuestion(body.questionId),
+  ]);
+
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
   if (room.status !== "live") {
     return NextResponse.json({ error: "Room not live" }, { status: 409 });
   }
-
-  const player = getPlayer(body.playerId);
   if (!player || player.roomId !== params.id) {
     return NextResponse.json({ error: "Player not in room" }, { status: 403 });
   }
-
-  const question = getQuestion(body.questionId);
   if (!question || question.roomId !== params.id) {
     return NextResponse.json({ error: "Question not in room" }, { status: 404 });
-  }
-
-  if (existingAnswer(body.playerId, body.questionId)) {
-    return NextResponse.json({ error: "Already answered" }, { status: 409 });
   }
 
   const isCorrect = body.choiceId === question.correctChoiceId;
@@ -54,7 +50,7 @@ export async function POST(req: Request, { params }: Params) {
     questionTimeMs: room.questionTimeMs,
   });
 
-  insertAnswer({
+  const inserted = await insertAnswer({
     playerId: body.playerId,
     questionId: body.questionId,
     choiceId: body.choiceId,
@@ -63,6 +59,9 @@ export async function POST(req: Request, { params }: Params) {
     isCorrect,
     points,
   });
+  if (!inserted) {
+    return NextResponse.json({ error: "Already answered" }, { status: 409 });
+  }
 
   broadcast(params.id, {
     type: "answer_submitted",
@@ -72,7 +71,8 @@ export async function POST(req: Request, { params }: Params) {
     isCorrect,
   });
 
-  broadcast(params.id, { type: "leaderboard", rows: getLeaderboard(params.id) });
+  const rows = await getLeaderboard(params.id);
+  broadcast(params.id, { type: "leaderboard", rows });
 
   return NextResponse.json({ isCorrect, points });
 }

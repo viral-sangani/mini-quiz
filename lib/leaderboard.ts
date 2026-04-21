@@ -1,10 +1,17 @@
 import { answersForPlayer, playersInRoom } from "./db";
 import type { LeaderboardRow } from "./events";
 
-export function getLeaderboard(roomId: string): LeaderboardRow[] {
-  const players = playersInRoom(roomId);
-  const rows: LeaderboardRow[] = players.map((p) => {
-    const answers = answersForPlayer(p.id);
+export async function getLeaderboard(roomId: string): Promise<LeaderboardRow[]> {
+  const players = await playersInRoom(roomId);
+  if (!players.length) return [];
+
+  // Fetch per-player answers in parallel — each call is its own Redis mget
+  // of that player's answer ids. For ~50 players we do 50 parallel pipelined
+  // round-trips, well within Upstash REST limits.
+  const answerLists = await Promise.all(players.map((p) => answersForPlayer(p.id)));
+
+  const rows: LeaderboardRow[] = players.map((p, i) => {
+    const answers = answerLists[i];
     let points = 0;
     let correctCount = 0;
     let totalTimeMs = 0;
@@ -23,6 +30,7 @@ export function getLeaderboard(roomId: string): LeaderboardRow[] {
       totalTimeMs,
     };
   });
+
   rows.sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
     if (a.totalTimeMs !== b.totalTimeMs) return a.totalTimeMs - b.totalTimeMs;

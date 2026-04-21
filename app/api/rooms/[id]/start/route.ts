@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 type Params = { params: { id: string } };
 
 export async function POST(_req: Request, { params }: Params) {
-  const room = getRoom(params.id);
+  const room = await getRoom(params.id);
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
   if (room.status !== "lobby") {
     return NextResponse.json({ error: "Room already started" }, { status: 409 });
@@ -16,7 +16,7 @@ export async function POST(_req: Request, { params }: Params) {
 
   const startedAt = Date.now();
   const endsAt = startedAt + room.durationMs;
-  updateRoom(params.id, { status: "live", startedAt, endsAt });
+  await updateRoom(params.id, { status: "live", startedAt, endsAt });
 
   broadcast(params.id, { type: "room_started", startedAt, endsAt });
 

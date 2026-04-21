@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@upstash/redis": "^1.37.0",
     "canvas-confetti": "^1.9.3",
     "framer-motion": "^11.11.0",
     "nanoid": "^5.0.7",

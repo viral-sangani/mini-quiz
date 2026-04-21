@@ -19,14 +19,14 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Name required" }, { status: 400 });
   }
 
-  const room = getRoom(params.id);
+  const room = await getRoom(params.id);
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
   if (room.status === "ended") {
     return NextResponse.json({ error: "Room has ended" }, { status: 409 });
   }
 
   const id = newId();
-  addPlayer({
+  await addPlayer({
     id,
     roomId: params.id,
     name: trimmed,

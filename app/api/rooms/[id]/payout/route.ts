@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const now = Date.now();
-  upsertPayout({
+  await upsertPayout({
     roomId: params.id,
     playerId: body.playerId,
     rank: body.rank,
@@ -41,7 +41,7 @@ export async function POST(req: Request, { params }: Params) {
 }
 
 export async function GET(_req: Request, { params }: Params) {
-  const payouts = payoutsForRoom(params.id).map((p) => ({
+  const payouts = (await payoutsForRoom(params.id)).map((p) => ({
     rank: p.rank,
     playerId: p.playerId,
     amount: p.amount,

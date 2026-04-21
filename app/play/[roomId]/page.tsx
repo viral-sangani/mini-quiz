@@ -457,17 +457,20 @@ function PlayInner() {
     return () => clearTimeout(id);
   }, [phase, room?.endsAt]);
 
-  // Prefetch leaderboard + payouts as soon as we have a playerId, and again
-  // whenever phase changes — so the finished screen never waits on a cold REST.
+  // Poll leaderboard + payouts as a fallback to SSE. Serverless instances
+  // don't share the SSE broker, so a subscriber on one instance won't receive
+  // broadcasts from another. Polling every 2.5s makes the UI self-heal.
   useEffect(() => {
     if (!playerId) return;
     let cancelled = false;
-    (async () => {
+
+    async function tick() {
       try {
         const [lbRes, payoutRes] = await Promise.all([
           fetch(`/api/rooms/${roomId}/leaderboard`, { cache: "no-store" }),
           fetch(`/api/rooms/${roomId}/payout`, { cache: "no-store" }),
         ]);
+        if (cancelled) return;
         if (lbRes.ok) {
           const data = (await lbRes.json()) as { rows: LeaderboardRow[] };
           if (!cancelled) setLeaderboardRows(data.rows);
@@ -497,9 +500,13 @@ function PlayInner() {
       } catch {
         // non-fatal
       }
-    })();
+    }
+
+    tick();
+    const interval = setInterval(tick, 2500);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [playerId, roomId, phase]);
 

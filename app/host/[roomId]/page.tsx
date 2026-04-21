@@ -93,10 +93,13 @@ export default function HostProjectorPage({
     return `${window.location.origin}/play/${roomId}`;
   }, [roomId]);
 
-  // Initial fetch: room, leaderboard, payouts
+  // Initial hydrate + 2.5s polling fallback. The SSE broker is in-memory
+  // per serverless instance, so polling keeps the projector honest even if
+  // broadcasts land on a different instance.
   useEffect(() => {
     let cancelled = false;
-    async function hydrate() {
+
+    async function tick() {
       try {
         const [roomRes, lbRes, payRes] = await Promise.all([
           fetch(`/api/rooms/${roomId}`, { cache: "no-store" }),
@@ -151,9 +154,12 @@ export default function HostProjectorPage({
         }
       }
     }
-    hydrate();
+
+    tick();
+    const interval = setInterval(tick, 2500);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [roomId]);
 

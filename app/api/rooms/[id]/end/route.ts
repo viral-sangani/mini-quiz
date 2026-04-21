@@ -9,12 +9,12 @@ export const dynamic = "force-dynamic";
 type Params = { params: { id: string } };
 
 export async function POST(_req: Request, { params }: Params) {
-  const room = getRoom(params.id);
+  const room = await getRoom(params.id);
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
   if (room.status === "ended") return NextResponse.json({ ok: true });
 
-  updateRoom(params.id, { status: "ended" });
-  broadcast(params.id, { type: "leaderboard", rows: getLeaderboard(params.id) });
+  await updateRoom(params.id, { status: "ended" });
+  broadcast(params.id, { type: "leaderboard", rows: await getLeaderboard(params.id) });
   broadcast(params.id, { type: "room_ended" });
   return NextResponse.json({ ok: true });
 }

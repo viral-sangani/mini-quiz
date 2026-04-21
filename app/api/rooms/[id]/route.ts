@@ -7,10 +7,13 @@ export const dynamic = "force-dynamic";
 type Params = { params: { id: string } };
 
 export async function GET(_req: Request, { params }: Params) {
-  const room = getRoom(params.id);
+  const [room, players] = await Promise.all([
+    getRoom(params.id),
+    playersInRoom(params.id),
+  ]);
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
 
-  const players = playersInRoom(params.id)
+  const sorted = [...players]
     .sort((a, b) => a.joinedAt - b.joinedAt)
     .map((p) => ({ playerId: p.id, name: p.name }));
 
@@ -22,7 +25,7 @@ export async function GET(_req: Request, { params }: Params) {
     durationMs: room.durationMs,
     questionTimeMs: room.questionTimeMs,
     prizeAmounts: room.prizeAmounts,
-    playerCount: players.length,
-    players,
+    playerCount: sorted.length,
+    players: sorted,
   });
 }
