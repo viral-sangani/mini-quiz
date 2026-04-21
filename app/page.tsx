@@ -26,7 +26,7 @@ export default function LandingPage() {
         <LandingActions />
 
         <footer className="pt-10 text-xs font-semibold text-duo-gray-dark">
-          Built for the Celo × MiniPay roadshow 🇵🇭
+          Built for Celo × MiniPay 🇵🇭
         </footer>
       </div>
     </main>
