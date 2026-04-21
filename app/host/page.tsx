@@ -8,10 +8,11 @@ import { Mascot } from "@/components/Mascot";
 import { connectAddress, hasInjectedWallet } from "@/lib/minipay";
 import { HOST_ADDRESS, isHostAddress } from "@/lib/host";
 
-type Duration = 120_000 | 180_000 | 300_000;
+type Duration = 60_000 | 120_000 | 180_000 | 300_000;
 type QuestionTime = 10_000 | 15_000 | 20_000 | 30_000;
 
 const DURATION_OPTIONS: { label: string; value: Duration }[] = [
+  { label: "1 min", value: 60_000 },
   { label: "2 min", value: 120_000 },
   { label: "3 min", value: 180_000 },
   { label: "5 min", value: 300_000 },

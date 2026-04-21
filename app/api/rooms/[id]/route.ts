@@ -10,6 +10,10 @@ export async function GET(_req: Request, { params }: Params) {
   const room = getRoom(params.id);
   if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
 
+  const players = playersInRoom(params.id)
+    .sort((a, b) => a.joinedAt - b.joinedAt)
+    .map((p) => ({ playerId: p.id, name: p.name }));
+
   return NextResponse.json({
     id: room.id,
     status: room.status,
@@ -18,6 +22,7 @@ export async function GET(_req: Request, { params }: Params) {
     durationMs: room.durationMs,
     questionTimeMs: room.questionTimeMs,
     prizeAmounts: room.prizeAmounts,
-    playerCount: playersInRoom(params.id).length,
+    playerCount: players.length,
+    players,
   });
 }

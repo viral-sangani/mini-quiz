@@ -110,7 +110,10 @@ export function Podium({
                 <div className="text-4xl sm:text-5xl" aria-hidden>
                   {slot.medal}
                 </div>
-                <div className="max-w-full truncate text-center font-black text-duo-ink">
+                <div
+                  className="w-full truncate px-1 text-center font-black text-duo-ink"
+                  title={slot.row.name}
+                >
                   {slot.row.name}
                 </div>
                 <div className="text-sm font-bold text-duo-gray-dark tabular-nums">

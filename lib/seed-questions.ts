@@ -9,101 +9,101 @@ export const SEED_QUESTIONS: SeedQuestion[] = [
   {
     prompt: "What is MiniPay?",
     choices: [
-      { id: "a", label: "A meme coin on Ethereum" },
+      { id: "a", label: "A crypto exchange" },
       { id: "b", label: "A stablecoin wallet built on Celo" },
-      { id: "c", label: "A centralized exchange" },
-      { id: "d", label: "A crypto debit card" },
+      { id: "c", label: "A meme coin" },
+      { id: "d", label: "A savings app with no crypto" },
     ],
     correctChoiceId: "b",
   },
   {
-    prompt: "Which blockchain powers MiniPay?",
+    prompt: "Where did MiniPay launch first?",
     choices: [
-      { id: "a", label: "Bitcoin" },
-      { id: "b", label: "Solana" },
-      { id: "c", label: "Celo" },
-      { id: "d", label: "Polygon" },
-    ],
-    correctChoiceId: "c",
-  },
-  {
-    prompt: "MiniPay lets you send money using just a…",
-    choices: [
-      { id: "a", label: "0x address" },
-      { id: "b", label: "Phone number" },
-      { id: "c", label: "Email + password" },
-      { id: "d", label: "Bank account" },
-    ],
-    correctChoiceId: "b",
-  },
-  {
-    prompt: "Celo lets you pay gas fees with which stablecoin?",
-    choices: [
-      { id: "a", label: "USDT (Ethereum)" },
-      { id: "b", label: "DAI" },
-      { id: "c", label: "USDm (cUSD)" },
-      { id: "d", label: "USDC (Ethereum)" },
-    ],
-    correctChoiceId: "c",
-  },
-  {
-    prompt: "What does 'Mento' refer to on Celo?",
-    choices: [
-      { id: "a", label: "A governance token" },
-      { id: "b", label: "The local-currency stablecoin protocol" },
-      { id: "c", label: "An NFT marketplace" },
-      { id: "d", label: "A bridge" },
-    ],
-    correctChoiceId: "b",
-  },
-  {
-    prompt: "Roughly how many MiniPay activations are there worldwide?",
-    choices: [
-      { id: "a", label: "100K" },
-      { id: "b", label: "1M" },
-      { id: "c", label: "14M+" },
-      { id: "d", label: "500M" },
-    ],
-    correctChoiceId: "c",
-  },
-  {
-    prompt: "Celo's average block time is about…",
-    choices: [
-      { id: "a", label: "10 seconds" },
-      { id: "b", label: "1 second" },
-      { id: "c", label: "1 minute" },
-      { id: "d", label: "10 minutes" },
-    ],
-    correctChoiceId: "b",
-  },
-  {
-    prompt: "MiniPay is available in over how many countries?",
-    choices: [
-      { id: "a", label: "5" },
-      { id: "b", label: "20" },
-      { id: "c", label: "60+" },
-      { id: "d", label: "200" },
-    ],
-    correctChoiceId: "c",
-  },
-  {
-    prompt: "Which of these is true about Celo today?",
-    choices: [
-      { id: "a", label: "It's a Bitcoin sidechain" },
-      { id: "b", label: "It's an Ethereum L2" },
-      { id: "c", label: "It's a standalone L1" },
-      { id: "d", label: "It's a Cosmos zone" },
-    ],
-    correctChoiceId: "b",
-  },
-  {
-    prompt: "What makes MiniPay feel different from a 'crypto wallet'?",
-    choices: [
-      { id: "a", label: "No seed phrase, no gas worries — works like mobile money" },
-      { id: "b", label: "It requires a hardware wallet" },
-      { id: "c", label: "It only holds NFTs" },
-      { id: "d", label: "It works only on desktop" },
+      { id: "a", label: "Inside the Opera browser" },
+      { id: "b", label: "As an Apple Watch app" },
+      { id: "c", label: "As a Telegram bot" },
+      { id: "d", label: "As a desktop Chrome extension" },
     ],
     correctChoiceId: "a",
+  },
+  {
+    prompt: "To send money on MiniPay, you only need the recipient's…",
+    choices: [
+      { id: "a", label: "Full wallet address (0x...)" },
+      { id: "b", label: "Phone number" },
+      { id: "c", label: "Bank account" },
+      { id: "d", label: "Passport number" },
+    ],
+    correctChoiceId: "b",
+  },
+  {
+    prompt: "Which of these stablecoins can you hold in MiniPay?",
+    choices: [
+      { id: "a", label: "Only USDC" },
+      { id: "b", label: "Only USDT" },
+      { id: "c", label: "USDC, USDT, and local stablecoins" },
+      { id: "d", label: "Only Bitcoin" },
+    ],
+    correctChoiceId: "c",
+  },
+  {
+    prompt: "In MiniPay, who pays the 'gas' (transaction fee)?",
+    choices: [
+      { id: "a", label: "The blockchain miners, for free" },
+      { id: "b", label: "You do — but in stablecoins, not a separate gas token" },
+      { id: "c", label: "Opera pays it for you forever" },
+      { id: "d", label: "You need to buy ETH first" },
+    ],
+    correctChoiceId: "b",
+  },
+  {
+    prompt: "How many people around the world use MiniPay?",
+    choices: [
+      { id: "a", label: "Around 10,000" },
+      { id: "b", label: "Around 500,000" },
+      { id: "c", label: "14 million+" },
+      { id: "d", label: "1 billion+" },
+    ],
+    correctChoiceId: "c",
+  },
+  {
+    prompt: "MiniPay is available in how many countries?",
+    choices: [
+      { id: "a", label: "2" },
+      { id: "b", label: "15" },
+      { id: "c", label: "60+" },
+      { id: "d", label: "195" },
+    ],
+    correctChoiceId: "c",
+  },
+  {
+    prompt: "Celo today is best described as…",
+    choices: [
+      { id: "a", label: "A Bitcoin sidechain" },
+      { id: "b", label: "An Ethereum Layer 2" },
+      { id: "c", label: "A standalone Layer 1" },
+      { id: "d", label: "A centralized server" },
+    ],
+    correctChoiceId: "b",
+  },
+  {
+    prompt: "Celo's blocks confirm roughly every…",
+    choices: [
+      { id: "a", label: "10 minutes" },
+      { id: "b", label: "1 minute" },
+      { id: "c", label: "1 second" },
+      { id: "d", label: "10 seconds" },
+    ],
+    correctChoiceId: "c",
+  },
+  {
+    prompt: "Celo's mission focuses on…",
+    choices: [
+      { id: "a", label: "High-end finance for institutions only" },
+      { id: "b", label: "NFT trading" },
+      { id: "c", label: "Real-world payments and financial access globally" },
+      { id: "d", label: "Gaming tokens" },
+    ],
+    correctChoiceId: "c",
   },
 ];

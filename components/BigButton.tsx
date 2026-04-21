@@ -7,7 +7,7 @@ type Variant = "green" | "yellow" | "red" | "blue" | "ghost";
 type Size = "sm" | "md" | "lg" | "xl";
 
 const BASE =
-  "btn-3d relative inline-flex items-center justify-center select-none rounded-2xl font-extrabold uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0 text-white";
+  "btn-3d relative inline-flex items-center justify-center select-none rounded-2xl font-extrabold uppercase tracking-wide text-center whitespace-normal break-words leading-tight disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0 text-white";
 
 const VARIANTS: Record<Variant, string> = {
   green: "bg-duo-green shadow-3d-green hover:bg-[#63d905]",

@@ -866,6 +866,26 @@ function PlayInner() {
         )}
       </AnimatePresence>
 
+      {room?.status === "live" && room.endsAt && (
+        <div className="rounded-3xl border-2 border-duo-yellow bg-gradient-to-br from-duo-yellow/20 to-celo-yellow/20 p-5 text-center shadow-3d-sm">
+          <div className="text-xs font-black uppercase tracking-widest text-duo-ink">
+            Winners announced in
+          </div>
+          <div className="mt-1 flex items-center justify-center">
+            <Countdown
+              to={room.endsAt}
+              size="lg"
+              onDone={() =>
+                setRoom((prev) => (prev ? { ...prev, status: "ended" } : prev))
+              }
+            />
+          </div>
+          <p className="mt-2 text-sm font-bold text-duo-gray-dark">
+            Hang tight — waiting for everyone to finish 🙌
+          </p>
+        </div>
+      )}
+
       <div className="rounded-3xl border-2 border-duo-gray-light bg-white p-4 shadow-3d-sm">
         <h2 className="mb-3 font-display text-lg font-black text-duo-ink">
           Top players 🏆
@@ -888,14 +908,6 @@ function PlayInner() {
         )}
       </div>
 
-
-      <div className="mt-2 flex flex-col gap-2">
-        <Link href="/">
-          <BigButton variant="ghost" size="lg" className="w-full">
-            Home
-          </BigButton>
-        </Link>
-      </div>
     </main>
   );
 }

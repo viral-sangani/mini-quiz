@@ -79,6 +79,15 @@ export default function HostProjectorPage({
   const toastSeqRef = useRef(0);
   const endPostedRef = useRef(false);
 
+  // Safety: if room is ended and the podium reveal never fires (e.g. host
+  // refreshed mid-ceremony), force podiumDone after 8s so payout buttons
+  // always appear.
+  useEffect(() => {
+    if (room?.status !== "ended" || podiumDone) return;
+    const t = setTimeout(() => setPodiumDone(true), 8000);
+    return () => clearTimeout(t);
+  }, [room?.status, podiumDone]);
+
   const joinUrl = useMemo(() => {
     if (typeof window === "undefined") return `/play/${roomId}`;
     return `${window.location.origin}/play/${roomId}`;
@@ -101,7 +110,9 @@ export default function HostProjectorPage({
         }
         if (!roomRes.ok) throw new Error(`Room ${roomRes.status}`);
 
-        const roomData = (await roomRes.json()) as Room;
+        const roomData = (await roomRes.json()) as Room & {
+          players?: LobbyPlayer[];
+        };
         const lbData = lbRes.ok
           ? ((await lbRes.json()) as { rows: LeaderboardRow[] })
           : { rows: [] };
@@ -119,6 +130,11 @@ export default function HostProjectorPage({
 
         if (cancelled) return;
         setRoom(roomData);
+        if (roomData.players?.length) {
+          setLobbyPlayers(
+            roomData.players.map((p) => ({ playerId: p.playerId, name: p.name }))
+          );
+        }
         setRows(lbData.rows);
         setPayouts(
           payData.payouts.map((p) => ({
@@ -156,14 +172,12 @@ export default function HostProjectorPage({
 
       switch (event.type) {
         case "player_joined":
-          setLobbyPlayers((prev) =>
-            prev.some((p) => p.playerId === event.playerId)
-              ? prev
-              : [...prev, { playerId: event.playerId, name: event.name }]
-          );
-          setRoom((prev) =>
-            prev ? { ...prev, playerCount: prev.playerCount + 1 } : prev
-          );
+          setLobbyPlayers((prev) => {
+            if (prev.some((p) => p.playerId === event.playerId)) return prev;
+            const next = [...prev, { playerId: event.playerId, name: event.name }];
+            setRoom((r) => (r ? { ...r, playerCount: next.length } : r));
+            return next;
+          });
           break;
         case "room_started":
           setRoom((prev) =>
@@ -446,7 +460,10 @@ function LobbyView({
                   >
                     {emoji}
                   </div>
-                  <span className="text-sm font-extrabold text-duo-ink">
+                  <span
+                    className="max-w-[10rem] truncate text-sm font-extrabold text-duo-ink"
+                    title={p.name}
+                  >
                     {p.name}
                   </span>
                 </motion.div>
@@ -493,18 +510,16 @@ function LiveView({
 }) {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <motion.div
-            animate={{ scale: [1, 1.1, 1] }}
-            transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
-            className="rounded-2xl bg-duo-red px-4 py-2 text-white shadow-3d-red"
-          >
-            <span className="font-display text-2xl font-black uppercase tracking-wider">
-              Live! ⚡
-            </span>
-          </motion.div>
-        </div>
+      <header className="flex items-center justify-between gap-6">
+        <motion.div
+          animate={{ scale: [1, 1.08, 1] }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+          className="rounded-xl bg-duo-red px-3 py-1.5 text-white shadow-3d-sm"
+        >
+          <span className="font-display text-sm font-black uppercase tracking-wider">
+            Live ⚡
+          </span>
+        </motion.div>
         <Countdown to={endsAt} size="xl" onDone={onCountdownDone} />
       </header>
 
@@ -530,7 +545,8 @@ function LiveView({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 500, damping: 25 }}
-              className="rounded-full border-2 border-duo-green-dark bg-duo-green px-5 py-2 font-extrabold text-white shadow-3d-green"
+              className="max-w-[90vw] truncate rounded-full border-2 border-duo-green-dark bg-duo-green px-5 py-2 font-extrabold text-white shadow-3d-green sm:max-w-md"
+              title={t.text}
             >
               {t.text}
             </motion.div>
@@ -573,13 +589,24 @@ function EndedView({
       </header>
 
       {!podiumDone ? (
-        <section className="flex min-h-[420px] items-end justify-center rounded-3xl border-2 border-duo-gray-light bg-white p-6 shadow-card">
+        <section className="flex min-h-[420px] flex-col items-stretch justify-end gap-4 rounded-3xl border-2 border-duo-gray-light bg-white p-6 shadow-card">
           {top3.length === 0 ? (
             <div className="flex-1 py-20 text-center font-bold text-duo-gray-dark">
               No players answered this round.
             </div>
           ) : (
-            <Podium rows={rows} onReveal={onPodiumReveal} />
+            <>
+              <Podium rows={rows} onReveal={onPodiumReveal} />
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={onPodiumReveal}
+                  className="btn-3d rounded-2xl border-2 border-duo-gray-light bg-white px-5 py-2 text-sm font-black uppercase tracking-wide text-duo-ink shadow-3d-sm hover:bg-duo-cream"
+                >
+                  Skip to payout →
+                </button>
+              </div>
+            </>
           )}
         </section>
       ) : (
@@ -616,10 +643,12 @@ function EndedView({
                     key={row.playerId}
                     className="flex flex-col gap-2 rounded-2xl border-2 border-duo-gray-light bg-duo-cream p-3"
                   >
-                    <div className="flex items-center gap-2 text-sm font-extrabold text-duo-ink">
-                      <span className="text-xl">{medal}</span>
-                      <span className="truncate">{row.name}</span>
-                      <span className="ml-auto font-black tabular-nums text-duo-gray-dark">
+                    <div className="flex min-w-0 items-center gap-2 text-sm font-extrabold text-duo-ink">
+                      <span className="shrink-0 text-xl">{medal}</span>
+                      <span className="min-w-0 flex-1 truncate" title={row.name}>
+                        {row.name}
+                      </span>
+                      <span className="shrink-0 font-black tabular-nums text-duo-gray-dark">
                         {row.points} pts
                       </span>
                     </div>
@@ -627,7 +656,6 @@ function EndedView({
                       roomId={roomId}
                       rank={rank}
                       playerId={row.playerId}
-                      playerName={row.name}
                       toAddress={row.address}
                       amount={amount}
                     />

@@ -11,14 +11,12 @@ export function PayoutButton({
   roomId,
   rank,
   playerId,
-  playerName,
   toAddress,
   amount,
 }: {
   roomId: string;
   rank: 1 | 2 | 3;
   playerId: string;
-  playerName: string;
   toAddress: string | null;
   amount: string;
 }) {
@@ -69,7 +67,7 @@ export function PayoutButton({
       ? "Pending…"
       : status === "confirmed"
       ? "💸 Sent!"
-      : `Send ${amount} USDT → ${playerName}`;
+      : `Send ${amount} USDT`;
 
   return (
     <div className="flex flex-col items-stretch gap-1">
