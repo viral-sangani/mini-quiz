@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/viralsangani/miniquiz-api
+  repository: ghcr.io/viral-sangani/miniquiz-api
   tag: "latest"
   pullPolicy: IfNotPresent
 
