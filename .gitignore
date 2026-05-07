@@ -1,6 +1,8 @@
 node_modules
 .next
 out
+dist
+.turbo
 .env
 .env.local
 .env*.local
@@ -12,3 +14,7 @@ out
 .DS_Store
 .vercel
 next-env.d.ts
+.local/
+infra/terraform.tfstate*
+infra/.terraform/
+infra/terraform.tfvars

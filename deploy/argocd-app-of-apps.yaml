@@ -1,0 +1,23 @@
+# Reference copy of the root Application that infra/argocd-bootstrap.tf
+# renders + applies. Kept here so reviewers can read the in-cluster shape
+# without leaving the repo. The live source of truth is the Tofu-applied
+# manifest from infra/app-of-apps.yaml.tpl.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/viralsangani/mini-quiz
+    targetRevision: main
+    path: deploy/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

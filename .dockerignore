@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/.vercel
+.git
+.github
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+deploy
+infra
+README.md
+docker-compose.yml

@@ -1,0 +1,63 @@
+image:
+  repository: ghcr.io/viralsangani/miniquiz-api
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Set to a Secret with .dockerconfigjson if the image is private.
+imagePullSecret: ""
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 4000
+
+ingress:
+  enabled: true
+  className: nginx
+  host: api.miniquiz.club
+  tlsSecretName: api-miniquiz-tls
+  clusterIssuer: letsencrypt-prod
+  # Cloudflare proxy passes huge HTTP/2 frames; let nginx accept SSE-friendly
+  # long-lived connections.
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 384Mi
+  limits:
+    memory: 768Mi
+
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+
+# Static env injected into both the api Deployment and the migration Job.
+env:
+  NODE_ENV: production
+  PORT: "4000"
+  LOG_LEVEL: info
+
+# Secrets — references to existing Secrets in the cluster.
+# - api-secrets: produced by `kubeseal` from deploy/manifests/sealed-secrets/api-secrets.yaml
+# - miniquiz-pg-app: auto-created by CNPG with username/password/uri
+# - redis-auth: produced by `kubeseal`, holds .password
+secretRefs:
+  appSecret: api-secrets
+  postgresSecret: miniquiz-pg-app
+  redisSecret: redis-auth
+
+postgres:
+  service: miniquiz-pg-rw.data.svc.cluster.local
+  port: 5432
+  database: miniquiz
+
+redis:
+  service: redis-master.data.svc.cluster.local
+  port: 6379

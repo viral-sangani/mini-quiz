@@ -1,0 +1,35 @@
+## Argo CD values — minimal PoC posture.
+## Server is exposed via the ingress-nginx Argo also reconciles, so we keep the
+## Service ClusterIP-only here. Use `kubectl port-forward` until DNS is ready.
+
+global:
+  domain: argocd.miniquiz.club
+
+configs:
+  params:
+    server.insecure: "true"  # TLS terminates at Cloudflare → ingress-nginx
+
+server:
+  service:
+    type: ClusterIP
+
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { memory: 512Mi }
+
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits:   { memory: 256Mi }
+
+applicationSet:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits:   { memory: 128Mi }
+
+notifications:
+  enabled: false
+
+dex:
+  enabled: false
