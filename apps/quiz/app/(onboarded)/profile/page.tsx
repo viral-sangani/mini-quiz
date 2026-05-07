@@ -98,7 +98,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Stat tiles */}
-      <div style={{ padding: "0 16px 12px", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+      <div style={{ padding: "0 16px 12px", display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
         <StatTile
           label="WINS"
           value={profile.wins}
@@ -106,16 +106,22 @@ export default function ProfilePage() {
           color="var(--gold)"
         />
         <StatTile
-          label="QUIZZES"
-          value={profile.quizzesPlayed}
-          icon="play"
-          color="var(--primary)"
-        />
-        <StatTile
           label="EARNED"
           value={`$${formatUsdt(profile.lifetimeUsdtWon)}`}
           icon="gem"
           color="var(--sky)"
+        />
+        <StatTile
+          label="STREAK"
+          value={`${profile.currentStreak}🔥 (best ${profile.longestStreak})`}
+          icon="flame"
+          color="var(--accent)"
+        />
+        <StatTile
+          label="DAILY WINS"
+          value={profile.dailyWins}
+          icon="crown"
+          color="var(--berry)"
         />
       </div>
 

@@ -13,6 +13,11 @@ import { adminPayoutRoutes } from "./routes/payouts.admin.js";
 import { adminStatsRoutes } from "./routes/admin-stats.admin.js";
 import { adminUserRoutes } from "./routes/users.admin.js";
 import { adminAuthRoutes } from "./routes/admin-auth.admin.js";
+import { dailyPublicRoutes } from "./routes/daily.public.js";
+import { practicePublicRoutes } from "./routes/practice.public.js";
+import { dailyAdminRoutes } from "./routes/daily.admin.js";
+import { practiceAdminRoutes } from "./routes/practice.admin.js";
+import { aiGenAdminRoutes } from "./routes/ai-gen.admin.js";
 import { startScheduler, stopScheduler } from "./services/scheduler.js";
 
 async function main() {
@@ -61,6 +66,11 @@ async function main() {
   await app.register(adminStatsRoutes);
   await app.register(adminUserRoutes);
   await app.register(adminAuthRoutes);
+  await app.register(dailyPublicRoutes);
+  await app.register(practicePublicRoutes);
+  await app.register(dailyAdminRoutes);
+  await app.register(practiceAdminRoutes);
+  await app.register(aiGenAdminRoutes);
 
   const schedulerHandle = startScheduler(app.log);
 

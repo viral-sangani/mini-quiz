@@ -37,6 +37,15 @@ enum Difficulty {
   HARD
 }
 
+// LIVE  — original scheduled multiplayer prize quizzes (the only kind that
+//         existed before). Drives the live SSE broadcast + auto-payouts.
+// DAILY — async 24h window; one play per user per UTC day. Aggregated into
+//         a daily-only leaderboard; never mutates User.totalXp.
+enum QuizKind {
+  LIVE
+  DAILY
+}
+
 // Unified User: admins authenticate via email+Google (NextAuth); players via
 // their MiniPay wallet. walletAddress is lowercase. Either email or
 // walletAddress (or both) can be null depending on the account type.
@@ -68,12 +77,20 @@ model User {
   // room lists, and public profile lookups. Foreign keys (Answer, Payout,
   // RoomPlayer) survive — restore is a single SQL UPDATE.
   deletedAt     DateTime?
+  // Daily-quiz streak fields. currentStreak counts consecutive UTC days a
+  // daily play was finished; resets to 1 on a skipped day. Updated atomically
+  // in daily.service.finishDailyPlay.
+  currentStreak     Int       @default(0)
+  longestStreak     Int       @default(0)
+  lastDailyPlayedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   accounts       Account[]
   sessions       Session[]
   createdQuizzes Quiz[]       @relation("QuizCreator")
+  practiceTopics PracticeTopic[] @relation("PracticeTopicCreator")
+  practicePlays  PracticePlay[]
   roomPlayers    RoomPlayer[]
   answers        Answer[]
   payouts        Payout[]
@@ -170,6 +187,13 @@ model Quiz {
   // tokens (primary | berry | sky | accent | ink), mapped to CSS vars on render.
   difficulty     Difficulty @default(MEDIUM)
   coverColor     String     @default("primary")
+  // LIVE = original prize quizzes; DAILY = async daily quiz. Discriminator
+  // so the rest of the data model (Question/Answer/RoomPlayer) can be reused
+  // unchanged. Public endpoints filter to LIVE; daily endpoints filter to DAILY.
+  kind           QuizKind   @default(LIVE)
+  // Set only for kind=DAILY. The UTC date the daily quiz is active. Combined
+  // with kind into a unique key so at most one DAILY exists per UTC date.
+  dailyDate      DateTime?  @db.Date
   archivedAt     DateTime?
   createdById    String
   createdAt      DateTime   @default(now())
@@ -179,7 +203,9 @@ model Quiz {
   questions Question[]
   players   RoomPlayer[]
   payouts   Payout[]
+  dailySnapshot DailyLeaderboardSnapshot?
 
+  @@unique([kind, dailyDate], name: "uniq_daily_per_date")
   @@index([status, scheduledStart])
   @@index([archivedAt])
 }
@@ -203,6 +229,13 @@ model RoomPlayer {
   quizId   String
   userId   String
   joinedAt DateTime @default(now())
+  // Daily-quiz only: when the player first fetched a question. Submission
+  // window closes at dailyStartedAt + 200_000ms (10 questions x 20s each).
+  // NULL for live (kind=LIVE) rooms.
+  dailyStartedAt     DateTime?
+  // Daily-quiz only: per-play question order, Fisher-Yates shuffled at start.
+  // Stored so a refresh re-renders the same order. NULL/[] for live rooms.
+  dailyQuestionOrder String[]
 
   quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
   user    User     @relation(fields: [userId], references: [id])
@@ -252,4 +285,82 @@ model Payout {
 
   @@unique([quizId, rank])
   @@index([status])
+}
+
+// Practice mode — solo learning, no XP, no leaderboard. Each topic has a
+// mutable pool of questions; a play samples 10 random ones. Admins refresh
+// pools every few days (with AI assistance). Per-topic head count
+// (`PracticePlay.userId` distinct count) is the only metric admin sees.
+model PracticeTopic {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String?
+  iconName    String   @default("book")
+  coverColor  String   @default("primary")
+  published   Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User               @relation("PracticeTopicCreator", fields: [createdById], references: [id])
+  questions PracticeQuestion[]
+  plays     PracticePlay[]
+
+  @@index([published])
+}
+
+model PracticeQuestion {
+  id              String   @id @default(cuid())
+  topicId         String
+  prompt          String
+  // Same shape as Question.choices: [{id, label}, ...]. JSON to keep it
+  // schema-flexible.
+  choices         Json
+  correctChoiceId String
+  // Why-correct copy shown after each answer. Optional so admins can author
+  // questions without explanations if they want.
+  explanation     String?
+  createdAt       DateTime @default(now())
+
+  topic PracticeTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+}
+
+// One row per (user, topic, session). Used for head count + practice badge
+// thresholds. Not used for any leaderboard. Keeps the played question IDs
+// so the player can be shown which set of questions they got.
+model PracticePlay {
+  id           String    @id @default(cuid())
+  topicId      String
+  userId       String
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  questionIds  String[]
+  scoreCorrect Int       @default(0)
+  scoreTotal   Int       @default(0)
+
+  topic PracticeTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id])
+
+  @@index([topicId, userId])
+  @@index([userId])
+}
+
+// Frozen daily leaderboard. Written by the scheduler's daily-housekeeping
+// branch when a DAILY quiz transitions LIVE -> ENDED. Frozen rather than
+// joined so retroactive user edits (rename, soft-delete) don't rewrite
+// history. winnerUserId is denormalized for the "Daily wins" profile stat.
+model DailyLeaderboardSnapshot {
+  id           String   @id @default(cuid())
+  date         DateTime @db.Date @unique
+  quizId       String   @unique
+  rows         Json
+  winnerUserId String?
+  createdAt    DateTime @default(now())
+
+  quiz Quiz @relation(fields: [quizId], references: [id])
+
+  @@index([winnerUserId])
 }

@@ -10,6 +10,18 @@ import { Icon, type IconName } from "./Icon";
 const TABS: { href: string; icon: IconName; label: string; match: (p: string) => boolean }[] = [
   { href: "/", icon: "home", label: "Play", match: (p) => p === "/" },
   {
+    href: "/daily",
+    icon: "clock",
+    label: "Daily",
+    match: (p) => p.startsWith("/daily"),
+  },
+  {
+    href: "/practice",
+    icon: "list",
+    label: "Practice",
+    match: (p) => p.startsWith("/practice"),
+  },
+  {
     href: "/leaderboard",
     icon: "trophy",
     label: "Ranks",

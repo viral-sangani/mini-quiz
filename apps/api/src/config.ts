@@ -31,6 +31,15 @@ const schema = z.object({
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .default("info"),
+  // Moonshot/Kimi for AI question generation. Optional so the api can boot
+  // without a key — the /admin/ai/generate-questions route returns a clean
+  // 503 if missing instead of crashing on import.
+  MOONSHOT_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  MOONSHOT_BASE_URL: z.string().url().default("https://api.moonshot.ai/v1"),
+  MOONSHOT_MODEL: z.string().default("kimi-k2.6"),
 });
 
 export type Config = z.infer<typeof schema>;

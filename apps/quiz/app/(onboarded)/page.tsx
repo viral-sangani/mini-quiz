@@ -102,6 +102,53 @@ export default function HomePage() {
         )}
       </div>
 
+      {/* Daily + practice shortcuts */}
+      <div
+        style={{
+          padding: "0 16px 12px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 10,
+        }}
+      >
+        <Link href="/daily" style={{ textDecoration: "none", color: "inherit" }}>
+          <MQCard
+            style={{
+              padding: 14,
+              minHeight: 96,
+              background: "var(--accent)",
+              color: "white",
+            }}
+          >
+            <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 4 }}>
+              Today
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>Daily quiz</div>
+            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
+              10 questions · 200s
+            </div>
+          </MQCard>
+        </Link>
+        <Link href="/practice" style={{ textDecoration: "none", color: "inherit" }}>
+          <MQCard
+            style={{
+              padding: 14,
+              minHeight: 96,
+              background: "var(--sky)",
+              color: "white",
+            }}
+          >
+            <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 4 }}>
+              Anytime
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>Practice</div>
+            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
+              No pressure, no rank
+            </div>
+          </MQCard>
+        </Link>
+      </div>
+
       {others.length > 0 && (
         <>
           <div

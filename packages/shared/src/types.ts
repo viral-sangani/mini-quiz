@@ -237,6 +237,12 @@ export type MyProfile = PublicUser & {
   quizzesPlayed: number;
   wins: number; // top-3 finishes
   lifetimeUsdtWon: string;
+  // Daily-quiz stats. currentStreak resets on a missed day. dailyWins is
+  // the count of frozen DailyLeaderboardSnapshot rows where this user was
+  // rank 1.
+  currentStreak: number;
+  longestStreak: number;
+  dailyWins: number;
   badges: { id: string; awardedAt: string }[];
 };
 

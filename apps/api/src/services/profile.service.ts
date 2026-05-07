@@ -116,15 +116,22 @@ export async function getOrCreatePlayerByWallet(walletAddress: string): Promise<
     include: { badges: true },
   });
 
-  // Stats: quizzes played, top-3 wins, lifetime confirmed USDT.
-  const [quizzesPlayed, payoutAgg, top3Wins] = await Promise.all([
-    prisma.roomPlayer.count({ where: { userId: user.id } }),
+  // Stats: quizzes played, top-3 wins, lifetime confirmed USDT, daily wins.
+  // Daily wins = count of DailyLeaderboardSnapshot rows where this user was
+  // rank 1 (denormalized as winnerUserId).
+  const [quizzesPlayed, payoutAgg, top3Wins, dailyWins] = await Promise.all([
+    prisma.roomPlayer.count({
+      where: { userId: user.id, quiz: { kind: "LIVE" } },
+    }),
     prisma.payout.findMany({
       where: { userId: user.id, status: "CONFIRMED" },
       select: { amount: true },
     }),
     prisma.payout.count({
       where: { userId: user.id, rank: { lte: 3 }, status: { not: "FAILED" } },
+    }),
+    prisma.dailyLeaderboardSnapshot.count({
+      where: { winnerUserId: user.id },
     }),
   ]);
 
@@ -144,6 +151,9 @@ export async function getOrCreatePlayerByWallet(walletAddress: string): Promise<
     quizzesPlayed,
     wins: top3Wins,
     lifetimeUsdtWon,
+    currentStreak: user.currentStreak,
+    longestStreak: user.longestStreak,
+    dailyWins,
     badges: user.badges.map((b) => ({
       id: b.badgeId,
       awardedAt: b.awardedAt.toISOString(),

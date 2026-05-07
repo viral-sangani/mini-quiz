@@ -2,26 +2,35 @@ import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
 import { evaluateBadgesAfterQuiz } from "./badge.service.js";
+import { finalizePastDaily, todayUtcDate } from "./daily.service.js";
 import { enqueueAutoPayouts, resumeInFlightPayouts } from "./payout.service.js";
 
 // Single-VPS cron. Ticks every TICK_INTERVAL_MS.
-// 1. SCHEDULED quizzes whose scheduledStart has passed → LIVE (broadcast quiz_started)
-// 2. LIVE quizzes whose duration elapsed → ENDED (create pending payouts, broadcast quiz_ended)
+// 1. (Once per UTC date) Daily housekeeping — finalize yesterday's DAILY,
+//    flip today's SCHEDULED DAILY to LIVE.
+// 2. SCHEDULED LIVE quizzes whose scheduledStart has passed → LIVE.
+// 3. LIVE quizzes whose duration elapsed → ENDED (auto-payouts + badges
+//    for kind=LIVE only; kind=DAILY is finalized by step 1).
 //
-// Idempotent per-tick: if tick() overlaps with itself for some reason, each
-// UPDATE filters on the prior status, so nothing double-fires.
+// Idempotent per-tick: if tick() overlaps with itself, each UPDATE filters
+// on the prior status so nothing double-fires.
 
-// 1s tick — the LIVE flip and ENDED flip are visible to players, so a slower
-// tick (5s) showed up as a 3-4s "stuck" gap when the lobby clock hit 0.
-// Two cheap findMany queries per tick at our scale.
 const TICK_INTERVAL_MS = 1_000;
 
 export type SchedulerHandle = { timer: NodeJS.Timeout | null };
 
+// Module-local: the YYYY-MM-DD UTC key we last ran daily housekeeping for.
+// Single-replica only — if api ever scales beyond 1 pod, move this to a
+// leader-elected guard (or a DB row + advisory lock).
+let lastDailyHousekeepingDateKey: string | null = null;
+
+function utcDateKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
 export function startScheduler(log: FastifyBaseLogger): SchedulerHandle {
   const handle: SchedulerHandle = { timer: null };
   log.info("scheduler: starting");
-  // Resume any payouts that were mid-flight when the backend last crashed.
   void resumeInFlightPayouts();
 
   const run = async () => {
@@ -45,9 +54,21 @@ export function stopScheduler(handle: SchedulerHandle): void {
 async function tick(log: FastifyBaseLogger): Promise<void> {
   const now = new Date();
 
-  // 1. SCHEDULED → LIVE
+  // 0. Daily housekeeping — once per UTC date.
+  const dateKey = utcDateKey(now);
+  if (dateKey !== lastDailyHousekeepingDateKey) {
+    try {
+      await runDailyHousekeeping(now, log);
+    } catch (e) {
+      log.error({ err: e }, "scheduler: daily housekeeping failed");
+    }
+    lastDailyHousekeepingDateKey = dateKey;
+  }
+
+  // 1. SCHEDULED → LIVE for the existing live multiplayer quizzes.
   const toStart = await prisma.quiz.findMany({
     where: {
+      kind: "LIVE",
       status: "SCHEDULED",
       scheduledStart: { lte: now },
       archivedAt: null,
@@ -55,7 +76,7 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
     select: { id: true, questionTimeMs: true, questions: { select: { id: true } } },
   });
   for (const q of toStart) {
-    const durationMs = q.questionTimeMs * q.questions.length + 5_000; // 5s buffer
+    const durationMs = q.questionTimeMs * q.questions.length + 5_000;
     const endsAt = new Date(now.getTime() + durationMs);
     const updated = await prisma.quiz.updateMany({
       where: { id: q.id, status: "SCHEDULED" },
@@ -72,10 +93,10 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
     }
   }
 
-  // 2. LIVE → ENDED (endedAt was set to the scheduled stop time when we went live;
-  //    any row where endedAt <= now is done)
+  // 2. LIVE → ENDED (live multiplayer only; daily quizzes are ended by
+  //    runDailyHousekeeping at the next UTC midnight).
   const toEnd = await prisma.quiz.findMany({
-    where: { status: "LIVE", endedAt: { lte: now } },
+    where: { kind: "LIVE", status: "LIVE", endedAt: { lte: now } },
     select: { id: true },
   });
   for (const q of toEnd) {
@@ -86,15 +107,65 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
     if (updated.count > 0) {
       log.info({ quizId: q.id }, "scheduler: quiz ENDED");
       broadcast(q.id, { type: "quiz_ended", quizId: q.id, endedAt: now.toISOString() });
-      // Auto-disburse: create + broadcast on-chain transfers immediately. No
-      // admin approval gate. Idempotent so a manual /end after this is a no-op.
       await enqueueAutoPayouts(q.id);
-      // Best-effort: badge evaluation must not block payout creation.
       try {
         await evaluateBadgesAfterQuiz(q.id);
       } catch (e) {
         log.error({ err: e, quizId: q.id }, "scheduler: badge eval failed");
       }
+    }
+  }
+}
+
+// Run at every UTC-date boundary (in practice once per day, on first tick
+// after midnight UTC). Two jobs:
+//   1. For yesterday's DAILY (or any prior LIVE DAILY without a snapshot yet),
+//      build the leaderboard, write a snapshot, award daily_first_win, mark
+//      ENDED.
+//   2. For today's SCHEDULED DAILY (if one exists), flip it to LIVE.
+async function runDailyHousekeeping(
+  now: Date,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const today = todayUtcDate(now);
+
+  // Finalize any LIVE DAILY whose dailyDate is in the past.
+  const toFinalize = await prisma.quiz.findMany({
+    where: {
+      kind: "DAILY",
+      status: "LIVE",
+      dailyDate: { lt: today },
+    },
+    select: { id: true, dailyDate: true },
+  });
+  for (const q of toFinalize) {
+    try {
+      const { winnerUserId } = await finalizePastDaily(q.id);
+      log.info(
+        { quizId: q.id, dailyDate: q.dailyDate, winnerUserId },
+        "scheduler: daily finalized",
+      );
+    } catch (e) {
+      log.error({ err: e, quizId: q.id }, "scheduler: finalize daily failed");
+    }
+  }
+
+  // Activate today's daily.
+  const todays = await prisma.quiz.findMany({
+    where: {
+      kind: "DAILY",
+      status: { in: ["DRAFT", "SCHEDULED"] },
+      dailyDate: today,
+    },
+    select: { id: true },
+  });
+  for (const q of todays) {
+    const updated = await prisma.quiz.updateMany({
+      where: { id: q.id, status: { in: ["DRAFT", "SCHEDULED"] } },
+      data: { status: "LIVE", startedAt: now },
+    });
+    if (updated.count > 0) {
+      log.info({ quizId: q.id }, "scheduler: daily LIVE");
     }
   }
 }

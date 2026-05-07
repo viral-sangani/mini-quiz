@@ -37,6 +37,7 @@ async function assertNoScheduleOverlap(args: {
   // the other quiz's start is within OUR window OR our start is within theirs.
   const others = await prisma.quiz.findMany({
     where: {
+      kind: "LIVE",
       archivedAt: null,
       status: { in: ["SCHEDULED", "LIVE"] },
       ...(args.excludeQuizId ? { NOT: { id: args.excludeQuizId } } : {}),
@@ -278,7 +279,7 @@ export async function listAdminQuizzes(filter: {
   status?: QuizStatus | "ALL";
   includeArchived?: boolean;
 }): Promise<AdminQuiz[]> {
-  const where: Prisma.QuizWhereInput = {};
+  const where: Prisma.QuizWhereInput = { kind: "LIVE" };
   if (filter.status && filter.status !== "ALL") where.status = filter.status;
   if (!filter.includeArchived) where.archivedAt = null;
   const quizzes = await prisma.quiz.findMany({
@@ -297,6 +298,7 @@ export async function listUpcomingPublicQuizzes(): Promise<PublicQuiz[]> {
   const now = new Date();
   const quizzes = await prisma.quiz.findMany({
     where: {
+      kind: "LIVE",
       archivedAt: null,
       OR: [
         { status: "SCHEDULED", scheduledStart: { gte: now } },
@@ -323,7 +325,9 @@ export async function getPublicQuizByCode(code: string): Promise<
       questions: { orderBy: { position: "asc" } },
     },
   });
-  if (!q || q.archivedAt) return null;
+  // Public quiz lookup never exposes DAILY quizzes — those are only reachable
+  // via /daily routes.
+  if (!q || q.archivedAt || q.kind !== "LIVE") return null;
   return {
     quiz: serializePublicQuiz(q),
     // Correct answer intentionally stripped from the public payload.

@@ -76,6 +76,22 @@ export function Sidebar({
       count: liveCount,
     },
   ];
+  const content: NavItem[] = [
+    {
+      id: "daily",
+      href: "/daily",
+      icon: "clock",
+      label: "Daily",
+      matchPrefix: "/daily",
+    },
+    {
+      id: "practice",
+      href: "/practice",
+      icon: "list",
+      label: "Practice",
+      matchPrefix: "/practice",
+    },
+  ];
   const moneyAndPeople: NavItem[] = [
     { id: "players", href: "/players", icon: "people", label: "Players" },
     {
@@ -97,7 +113,7 @@ export function Sidebar({
   //   2. matchPrefix on the longest (most specific) prefix
   //   3. exact href
   // Items checked: only one wins; the rest render inactive.
-  const allItems = [...operate, ...moneyAndPeople, ...account];
+  const allItems = [...operate, ...content, ...moneyAndPeople, ...account];
   const exactWinner = allItems.find((it) =>
     it.matchExact?.some((re) => re.test(pathname)),
   );
@@ -166,6 +182,10 @@ export function Sidebar({
       <div className="adm-nav">
         <SectionHeader>Operate</SectionHeader>
         {operate.map((it) => (
+          <Item key={it.label} item={it} />
+        ))}
+        <SectionHeader>Content</SectionHeader>
+        {content.map((it) => (
           <Item key={it.label} item={it} />
         ))}
         <SectionHeader>People &amp; Money</SectionHeader>
