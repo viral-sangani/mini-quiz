@@ -1,24 +1,28 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText } from "ai";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { config } from "../config.js";
 
-// AI question generation via Kimi/Moonshot. Uses Vercel AI SDK v6 with the
-// OpenAI-compatible provider pointed at Moonshot's endpoint.
+// AI question generation via Kimi/Moonshot. Uses a direct fetch to the
+// `/chat/completions` endpoint instead of the Vercel AI SDK provider.
 //
-// Why we don't use Output.object({schema}): that sets responseFormat=json_schema,
-// which Moonshot doesn't support (logs a warning, then either ignores it or
-// returns empty). Instead we use the loose json_object mode (responseFormat
-// passed via providerOptions below) AND a strict system prompt, then parse +
-// Zod-validate ourselves. Portable across every OpenAI-compatible provider.
+// Why not AI SDK? Two issues with `@ai-sdk/openai-compatible@2.0.46`:
+//   1. `Output.object({schema})` sets `response_format=json_schema`, which
+//      Moonshot doesn't support. Model returns plain text and AI SDK
+//      throws `NoOutputGeneratedError` after the request lifetime.
+//   2. The provider's `providerOptions` schema is restrictive
+//      (`{user, reasoningEffort, textVerbosity, strictJsonSchema}`) — there's
+//      no documented way to pass `response_format=json_object` through it,
+//      and our attempts produced empty assistant content under load.
 //
-// Defaults to moonshot-v1-8k (fast, deterministic) instead of kimi-k2.6 (a
-// reasoning model, much slower, can emit empty assistant content when
-// reasoning tokens consume the entire output budget).
+// A direct fetch is dependency-light, fully observable, and gives us
+// `response_format: { type: "json_object" }` which Moonshot supports. We
+// still retry once on empty/invalid output and Zod-validate the parsed
+// response.
 //
-// Reliability: a single attempt has a hard 90s timeout. On empty/invalid
-// output we retry once with stricter instructions before giving up.
+// Defaults to moonshot-v1-8k (fast, deterministic, ~15-30s for 10 questions
+// with explanations) instead of kimi-k2.6 (a reasoning model — slow, can
+// emit empty assistant content when reasoning tokens consume the entire
+// output budget).
 
 export type GeneratedChoice = { id: string; label: string };
 export type GeneratedQuestion = {
@@ -92,19 +96,14 @@ function buildUserPrompt(opts: GenerateOptions): string {
 // {...} block. Defensive — if the model behaved we just return the input.
 function extractJsonBlock(raw: string): string {
   let text = raw.trim();
-  // Strip ```json ... ``` or ``` ... ``` fences.
   const fenceMatch = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```\s*$/i);
   if (fenceMatch) text = fenceMatch[1]!.trim();
-  // If there's still leading/trailing prose, find the first '{' and last '}'.
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   if (first >= 0 && last > first) text = text.slice(first, last + 1);
   return text;
 }
 
-// Validate that every question's correctChoiceId matches one of its choice ids.
-// Zod can't enforce cross-field constraints concisely, so this is a runtime
-// double-check.
 function validateQuestions(questions: GeneratedQuestion[]): void {
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i]!;
@@ -127,63 +126,104 @@ export class AiGenerationDisabledError extends Error {
   }
 }
 
-// Lazily build the provider so the api can boot without a key. Throws a
-// typed error if called when the key is missing.
-function buildModel() {
+// Shape of OpenAI-compatible /chat/completions response (subset we use).
+type ChatCompletionResponse = {
+  choices?: Array<{
+    message?: { content?: string | null };
+    finish_reason?: string;
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  error?: { message?: string; type?: string; code?: string };
+};
+
+async function callMoonshot(args: {
+  systemPrompt: string;
+  userPrompt: string;
+  maxTokens: number;
+  abortSignal: AbortSignal;
+}): Promise<{ text: string; finishReason: string }> {
   if (!config.MOONSHOT_API_KEY) throw new AiGenerationDisabledError();
-  const provider = createOpenAICompatible({
-    name: "moonshot",
-    baseURL: config.MOONSHOT_BASE_URL,
-    apiKey: config.MOONSHOT_API_KEY,
+  const url = `${config.MOONSHOT_BASE_URL.replace(/\/+$/, "")}/chat/completions`;
+  const body = {
+    model: config.MOONSHOT_MODEL,
+    temperature: 0.3,
+    max_tokens: args.maxTokens,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: args.systemPrompt },
+      { role: "user", content: args.userPrompt },
+    ],
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.MOONSHOT_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+    signal: args.abortSignal,
   });
-  return provider.languageModel(config.MOONSHOT_MODEL);
+  if (!res.ok) {
+    let errBody: ChatCompletionResponse | string;
+    try {
+      errBody = (await res.json()) as ChatCompletionResponse;
+    } catch {
+      errBody = await res.text();
+    }
+    const errMsg =
+      typeof errBody === "object" && errBody?.error?.message
+        ? errBody.error.message
+        : `HTTP ${res.status}`;
+    throw new Error(`Moonshot API error: ${errMsg}`);
+  }
+  const json = (await res.json()) as ChatCompletionResponse;
+  const choice = json.choices?.[0];
+  return {
+    text: choice?.message?.content ?? "",
+    finishReason: choice?.finish_reason ?? "unknown",
+  };
 }
 
-// Single attempt at generation. Returns raw validated questions. Throws on
-// empty / invalid output / network error.
 async function attemptGeneration(
   opts: GenerateOptions,
   attempt: number,
 ): Promise<GeneratedQuestion[]> {
-  const model = buildModel();
   // Token budget. moonshot-v1-8k has 8k context, so 4k output is the safe
-  // ceiling. Empirically 10 questions with explanations is ~3-3.5k tokens
-  // of output. For larger models we'd let this go higher, but capping
-  // protects against pathological prompts.
+  // ceiling. Empirically 10 questions with explanations is ~3-3.5k tokens.
   const perQuestion = opts.withExplanations ? 350 : 150;
-  const maxOutputTokens = Math.min(4_000, 400 + opts.count * perQuestion);
+  const maxTokens = Math.min(4_000, 400 + opts.count * perQuestion);
 
-  // Hard timeout — Moonshot occasionally hangs. AbortController so the
-  // socket actually closes instead of waiting on global fetch defaults.
   const ac = new AbortController();
   const TIMEOUT_MS = 90_000;
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
 
   let text = "";
+  let finishReason = "unknown";
   try {
-    const result = await generateText({
-      model,
-      system: buildSystemPrompt(),
-      prompt: buildUserPrompt(opts),
-      maxOutputTokens,
+    const result = await callMoonshot({
+      systemPrompt: buildSystemPrompt(),
+      userPrompt: buildUserPrompt(opts),
+      maxTokens,
       abortSignal: ac.signal,
-      // Loose JSON mode. Moonshot supports response_format=json_object via
-      // the OpenAI-compatible provider (but NOT json_schema, which is why
-      // we don't use Output.object).
-      providerOptions: {
-        moonshot: { responseFormat: { type: "json_object" } },
-      },
     });
-    text = result.text ?? "";
+    text = result.text;
+    finishReason = result.finishReason;
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new Error(`Moonshot call timed out after ${TIMEOUT_MS}ms`);
+    }
+    throw e;
   } finally {
     clearTimeout(timer);
   }
 
   if (!text.trim()) {
     throw new Error(
-      attempt === 1
-        ? "Model returned empty response"
-        : "Model returned empty response (after retry)",
+      `Model returned empty response (finish_reason=${finishReason}, attempt=${attempt})`,
     );
   }
   const jsonBlock = extractJsonBlock(text);
@@ -210,9 +250,6 @@ export async function generateQuestions(
   if (opts.count < 1 || opts.count > 20) {
     throw new Error("count must be between 1 and 20");
   }
-  // First attempt. On empty / parse-fail / timeout we retry exactly once;
-  // hard errors (auth, schema validation of well-formed but wrong content)
-  // surface immediately on the second attempt as well so we don't loop.
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -225,7 +262,6 @@ export async function generateQuestions(
       }));
     } catch (e) {
       lastErr = e;
-      // Don't retry obvious permanent failures.
       if (e instanceof AiGenerationDisabledError) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("count must be between")) throw e;
