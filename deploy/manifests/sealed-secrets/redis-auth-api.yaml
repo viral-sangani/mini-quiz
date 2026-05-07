@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: redis-auth
+  namespace: api
+spec:
+  encryptedData:
+    password: AgAWy3DASqA/tGSc1Z9p798AcBfU9RlQGZHm9OPgOpnYAVnc0SRMQJPK6L+OjEvQb9E/A2OgRYocpHlJtyC/Kv4krmflbXN8gtRmgUmPbk2YL786ZbHKWwWBjjjQXXjssokIuJEJWqqCq3wpNCYLc50yGeifQUCz431ipVrN0fN78n5r0YohjEx7aH8Cx2YboGScvb1RSG1dWA0e/8LlqtZtmac5jMKuAezv/I2tcM4pRGnIdhEOnGliXGt8jmkq31DZN/WcWZcVgxV4H/zEwAEbB4dDzkjFZuZ3/S9U1S+Kx4fbdkchaBLgzPEMl/1b3ehj87CzFTujrHnQVxq9aVHSqCmFMWUkMGLEGplKgWlFQZF2pJ7eVUsX2a5kxJvtHD+x3ODuMA2AaswEA7UJVTloRv4ZgWBUNqqFuqzQ/EtfD66nU3fjOLs8yxdt3ufj+tpxYRNWh8AABPfs4moF/VHbm1eMAxvVhHCe6IUvYxzHGzSZaWAVPfGyOW80K36VtabBM3RYeee8pzLgtqdKHGM5b90RI8YaieigfGmIg8v9xvVlz76CWIES9u3ygrtun0f389FbOaWcySP6y3fyNoan/J0FkQTLsVqNBAdXN4eQUZnfS5LbrULPK94ORxCW0vPq9YWCeVEx82XDCwNBDa2uTiEve8P+KvqI66A1Bxs9NJgVMjJqOvqQBOiZYBi/CgRSQgvpGO4fdLAkJtssEh0AS1XahmiFL+myKbgTJVkFTQ==
+  template:
+    metadata:
+      name: redis-auth
+      namespace: api
+    type: Opaque
