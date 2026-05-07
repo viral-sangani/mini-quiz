@@ -1,5 +1,11 @@
-import { PrismaClient } from "@prisma/client";
+// Default-import then destructure: @prisma/client is CommonJS so the named
+// import fails when Node loads the compiled dist as ESM. tsx (dev) was
+// hiding this with its CJS interop loader.
+import pkg from "@prisma/client";
 import { config } from "./config.js";
+
+const { PrismaClient } = pkg;
+type PrismaClient = InstanceType<typeof PrismaClient>;
 
 declare global {
   // eslint-disable-next-line no-var
