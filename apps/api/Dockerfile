@@ -15,7 +15,8 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 
-RUN pnpm --filter @mini-quiz/api prisma generate \
+RUN pnpm --filter @mini-quiz/shared build \
+ && pnpm --filter @mini-quiz/api prisma generate \
  && pnpm --filter @mini-quiz/api build
 
 RUN pnpm --filter @mini-quiz/api deploy --prod /pruned
