@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-07** (storage section + R2 migration).
+> Last updated: **2026-05-07** (admin no longer touches DB).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -78,8 +78,11 @@
 ### `apps/admin` — admin console
 
 - Desktop-first (mobile gate at <768px).
-- NextAuth: Google OAuth + email magic link. `ADMIN_EMAILS` env var on
-  the API gates who's an admin.
+- NextAuth v5 (Google OAuth + email magic-link), JWT-only sessions, no
+  Prisma adapter. The `signIn` callback hard-blocks emails not on
+  `ADMIN_EMAILS`. JWT carries `sub: <email>`, `role: ADMIN|USER`.
+- All page data flows through the api over HTTPS (`adminApi` in
+  `lib/admin-api.ts`). Admin app does not touch Postgres directly.
 - Pages: `/overview`, `/quizzes`, `/quizzes/[id]/live`, `/players`,
   `/payouts`, `/payouts/[id]`.
 - Live monitor uses the same SSE event stream as players, plus an

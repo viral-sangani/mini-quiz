@@ -1,6 +1,6 @@
 # Deployment
 
-> Last updated: **2026-05-07** (Tofu state moved to R2).
+> Last updated: **2026-05-07** (Vercel projects + admin auth allowlist).
 > Update triggers: cluster topology change, region change, new infra
 > resource, image registry move, CI workflow change.
 
@@ -8,8 +8,8 @@
 
 | Surface | Where | Why |
 |---|---|---|
-| `apps/quiz` (Next.js) | Vercel | Edge + free preview deploys |
-| `apps/admin` (Next.js) | Vercel | Same |
+| `apps/quiz` (Next.js) | Vercel project `mini-quiz`, root `apps/quiz` | Edge + free preview deploys. Pure FE, no DB access. |
+| `apps/admin` (Next.js) | Vercel project `mini-quiz-admin`, root `apps/admin` | Same. Auth via ADMIN_EMAILS allowlist (no DB on Vercel). |
 | `apps/api` (Fastify) | DOKS | Long-lived process, in-proc scheduler + SSE |
 | Postgres (CNPG) | In-cluster (DOKS) | ~$50/mo cheaper than DO Managed at PoC scale |
 | Redis (Bitnami) | In-cluster (DOKS) | Same |
@@ -114,6 +114,48 @@ deploy/
 `sealed-secret-payloads` is in the same wave as `sealed-secrets` because
 the encrypted YAMLs reference the controller namespace; the controller
 must be running to decrypt them, but Argo retries until it succeeds.
+
+## Vercel projects
+
+Two projects, both under team `viral-sanganis-projects-d6d25698`. Both
+deploy from the **repo root** (CLI run from `mini-quiz/`); each project
+has `rootDirectory` set so Vercel scopes the build to its subdir.
+
+| Project | Root | Production URL | Custom domain |
+|---|---|---|---|
+| `mini-quiz` | `apps/quiz` | `mini-quiz-ph.vercel.app` | `miniquiz.club`, `www.miniquiz.club` |
+| `mini-quiz-admin` | `apps/admin` | `mini-quiz-admin.vercel.app` | `admin.miniquiz.club` |
+
+### Env vars (set per project, production target)
+
+`mini-quiz` (quiz):
+- `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`
+
+`mini-quiz-admin`:
+- `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`
+- `NEXT_PUBLIC_QUIZ_BASE_URL=https://miniquiz.club`
+- `NEXTAUTH_URL=https://admin.miniquiz.club`
+- `NEXTAUTH_SECRET` — same string the api Pod uses (must match for JWT verification)
+- `ADMIN_EMAILS` — comma-separated, lowercased; same set the api Pod uses
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `EMAIL_FROM` (Nodemailer email magic-link disabled until `EMAIL_SERVER` is set)
+
+### To deploy a Vercel app from the CLI
+
+```bash
+# From the repo root, link to the right project, then deploy:
+echo '{"projectId":"prj_RqikSLgHIAcUb9DvCvrPMetcBpK4","orgId":"team_H2565VzmcSsgDCQ6jzUSbo8x","projectName":"mini-quiz"}' > .vercel/project.json
+vercel --prod --yes      # quiz
+
+# To switch to admin:
+echo '{"projectId":"prj_Tq79B9zywjLVjdVeS1AUnk4YiUX5","orgId":"team_H2565VzmcSsgDCQ6jzUSbo8x","projectName":"mini-quiz-admin"}' > .vercel/project.json
+vercel --prod --yes      # admin
+```
+
+`.vercel/` is gitignored. Both projects also auto-deploy on git push if
+linked to the GitHub repo (currently CLI-only since the repo lives at
+`celo-org/mini-quiz` + `viral-sangani/mini-quiz` and the Vercel git
+integration isn't wired up).
 
 ## CI: image build
 

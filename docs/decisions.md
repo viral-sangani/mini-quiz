@@ -1,6 +1,6 @@
 # Decisions
 
-> Last updated: **2026-05-07** (Tofu state moved to R2).
+> Last updated: **2026-05-07** (Vercel projects + admin auth allowlist).
 > Append-only log of non-obvious choices. Add a new entry when you make
 > a structural decision that a future agent (or human) would reasonably
 > question. Don't rewrite history; if a decision is overturned, add a
@@ -291,6 +291,48 @@ overhead + isn't tracked).
 - New files in `packages/shared/src/` need to be re-exported from
   `index.ts` with a `.js` extension on the import path (the source is
   still `.ts`; tsc rewrites the path on emit).
+
+---
+
+### 13. Admin auth via ADMIN_EMAILS allowlist, no Prisma adapter on Vercel
+
+**Context**: Original admin app used `@auth/prisma-adapter` so NextAuth
+could persist `User`, `Account`, `VerificationToken` rows. That requires
+the admin app to reach Postgres — but Postgres is in DOKS and not
+exposed publicly. We did NOT want to put Postgres on the public
+internet.
+
+**Decision**: Drop `PrismaAdapter`. NextAuth runs JWT-only sessions.
+The `signIn` callback hard-blocks any email not in `ADMIN_EMAILS`
+(env var on the admin app). JWT contains `sub: <lowercased-email>`,
+`role: ADMIN`. The Fastify api re-checks `email ∈ ADMIN_EMAILS` and
+upserts a `User` row by email so foreign keys (`Quiz.createdById`,
+`Payout.approvedById`, `User.flaggedById`) still resolve.
+
+**Why**: Admin can stay on Vercel (free, fast, easy preview deploys).
+No new infra. No code-side adapter rewrite. The api was already the
+sole gate for sensitive operations — doubling up the allowlist on the
+admin side just stops fake sign-ins from reaching the api.
+
+**Alternatives considered**:
+- Custom NextAuth Adapter that wraps the api over HTTPS (~10 admin
+  endpoints + 1 adapter file, way more code).
+- Move admin onto DOKS alongside the api (one more workload to
+  maintain).
+- Expose Postgres publicly via DOKS LoadBalancer (security regression).
+
+**Consequences**:
+- **Demoting an admin** = remove email from `ADMIN_EMAILS` in two
+  places: the api Sealed Secret (Pod restart, ~1 min) AND the admin
+  Vercel project's env var (immediate on next request).
+- **No per-user admin role storage.** `User.role` field stays in the
+  schema, written by `getOrCreateAdminUser` but ignored on read.
+- **JWT `sub` is now an email, not a User.id.** The api translates at
+  the boundary. If the email changes (rare for OAuth), a new User row
+  is created — old data is still attached to the old User but new
+  actions go to the new one.
+- **Admin app ships ~3 MB lighter** (Prisma client + adapter dropped
+  from the bundle).
 
 ---
 

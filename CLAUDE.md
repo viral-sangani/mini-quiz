@@ -1,7 +1,7 @@
 # Mini Quiz — Agent Guide
 
 > Read this first. It's the front door for every agent session in this repo.
-> Last updated: **2026-05-07**.
+> Last updated: **2026-05-07** (Vercel projects + DB-free admin).
 
 ## What this is
 
@@ -49,6 +49,8 @@ without it.
 2. **The API must remain ESM-correct.** `@prisma/client` is CommonJS — never
    add a named import from it. Always `import pkg from "@prisma/client"`
    in `apps/api/src/db.ts` and re-export. Same goes for any other CJS dep.
+   Note: **`apps/admin` does NOT depend on `@prisma/client`** — auth is
+   ADMIN_EMAILS allowlist + api calls only. Don't reintroduce Prisma there.
 3. **Schema changes use `prisma migrate dev` locally, then `migrate deploy`
    in CI.** Never edit `apps/api/prisma/migrations/*` by hand.
 4. **`packages/shared` is ESM-built.** When you add a new file there, the
@@ -122,6 +124,8 @@ mini-quiz/
 ## Quick links
 
 - **API live URL**: `https://api.miniquiz.club/health`
+- **Quiz (player) URL**: `https://miniquiz.club` (Vercel project `mini-quiz`)
+- **Admin URL**: `https://admin.miniquiz.club` (Vercel project `mini-quiz-admin`)
 - **Argo CD UI**: `kubectl -n argocd port-forward svc/argocd-server 8080:80`
   → `http://localhost:8080` (admin password: `kubectl -n argocd get
   secret argocd-initial-admin-secret -o jsonpath='{.data.password}' |
