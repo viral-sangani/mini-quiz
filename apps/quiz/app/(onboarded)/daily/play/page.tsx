@@ -41,6 +41,9 @@ export default function DailyPlayPage() {
   const [error, setError] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
   const [picking, setPicking] = useState(false);
+  // Picked tile id while we're awaiting the server response. Cleared on
+  // advance to next question. Drives the "locked-in" optimistic visual.
+  const [pickedChoiceId, setPickedChoiceId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ correct: boolean; points: number } | null>(
     null,
   );
@@ -122,16 +125,34 @@ export default function DailyPlayPage() {
   }, [remaining, start, finish, wallet, finalize]);
 
   const submit = async (q: PublicQuestion, choiceId: string) => {
-    if (!wallet || picking) return;
+    if (!wallet || picking || pickedChoiceId) return;
+    // Lock picked tile + dim siblings IMMEDIATELY (zero-latency feedback).
     setPicking(true);
+    setPickedChoiceId(choiceId);
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate(15);
+      } catch {
+        // ignore
+      }
+    }
     const startedAt = new Date(start!.startedAt).getTime();
-    // Per-question time-taken: capped at 20s. We approximate using overall
-    // elapsed since start, divided by question position; close enough for
-    // scoring math.
     const timeTakenMs = Math.min(
       20_000,
       Math.max(0, Math.floor((Date.now() - startedAt) - idx * 20_000)),
     );
+    // Schedule advance from click time, NOT response time, so feedback hold
+    // is consistent regardless of network latency.
+    const advance = () => {
+      setFeedback(null);
+      setPickedChoiceId(null);
+      if (idx + 1 >= start!.questions.length) {
+        void finalize(wallet);
+      } else {
+        setIdx((i) => i + 1);
+      }
+    };
+    let advanceTimer: ReturnType<typeof setTimeout> | null = setTimeout(advance, 1200);
     try {
       const res = await api.post<AnswerResp>("/daily/answer", {
         walletAddress: wallet,
@@ -142,19 +163,15 @@ export default function DailyPlayPage() {
       submittedSet.current.add(q.id);
       setFeedback({ correct: res.isCorrect, points: res.points });
       if (res.isCorrect) fireConfetti();
-      setTimeout(() => {
-        setFeedback(null);
-        if (idx + 1 >= start!.questions.length) {
-          void finalize(wallet);
-        } else {
-          setIdx((i) => i + 1);
-        }
-      }, 1200);
     } catch (e) {
       if (e instanceof ApiError && (e.code === "EXPIRED" || e.status === 410)) {
+        if (advanceTimer) clearTimeout(advanceTimer);
+        advanceTimer = null;
         void finalize(wallet);
       } else {
-        setError(e instanceof Error ? e.message : "Submit failed");
+        // Server rejected — show neutral feedback so user knows tap didn't
+        // earn points, then advance.
+        setFeedback({ correct: false, points: 0 });
       }
     } finally {
       setPicking(false);
@@ -277,35 +294,55 @@ export default function DailyPlayPage() {
         <h2 className="mq-h2" style={{ marginBottom: 16 }}>{q.prompt}</h2>
         <div style={{ display: "grid", gap: 8 }}>
           {(q.choices as Choice[]).map((c) => {
+            const isPicked = pickedChoiceId === c.id;
+            const isLocked = pickedChoiceId !== null;
             return (
               <button
                 key={c.id}
                 type="button"
-                disabled={picking}
+                disabled={isLocked}
                 onClick={() => void submit(q, c.id)}
                 className="mq-choice"
                 style={{
                   padding: 14,
                   borderRadius: 14,
-                  border: "1px solid var(--ink-faint)",
-                  background: "var(--surface-1, white)",
+                  border: isPicked
+                    ? "2px solid var(--primary)"
+                    : "1px solid var(--ink-faint)",
+                  background: isPicked
+                    ? "var(--primary-bg, #dbeafe)"
+                    : "var(--surface-1, white)",
                   textAlign: "left",
                   fontWeight: 600,
                   fontSize: 15,
-                  opacity: picking ? 0.6 : 1,
-                  cursor: picking ? "wait" : "pointer",
+                  opacity: isLocked && !isPicked ? 0.45 : 1,
+                  cursor: isLocked ? "default" : "pointer",
+                  transform: isPicked ? "translateY(1px)" : "none",
+                  transition: "transform 80ms ease, background 120ms ease",
                 }}
               >
                 <span
                   style={{
                     fontWeight: 800,
                     marginRight: 8,
-                    color: "var(--primary)",
+                    color: isPicked ? "var(--primary)" : "var(--primary)",
                   }}
                 >
                   {c.id.toUpperCase()}.
                 </span>
                 {c.label}
+                {isPicked && (
+                  <span
+                    style={{
+                      float: "right",
+                      fontSize: 12,
+                      color: "var(--primary)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓ locked in
+                  </span>
+                )}
               </button>
             );
           })}

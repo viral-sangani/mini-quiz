@@ -11,6 +11,7 @@ const joinSchema = z.object({
 });
 
 const answerSchema = z.object({
+  walletAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   roomPlayerId: z.string().min(1),
   questionId: z.string().min(1),
   choiceId: z.string().min(1),
@@ -54,7 +55,22 @@ export async function roomRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: parsed.error.flatten() });
       }
       const result = await submitAnswer(req.params.code.toUpperCase(), parsed.data);
-      if ("error" in result) return reply.code(400).send(result);
+      if ("error" in result) {
+        // 401 for wallet/identity failures (security), 410 for expired
+        // questions, 409 for duplicate-answer races, 404 for not-found,
+        // 400 otherwise.
+        const status =
+          result.code === "WALLET_MISMATCH"
+            ? 401
+            : result.code === "STALE"
+              ? 410
+              : result.code === "ALREADY_ANSWERED"
+                ? 409
+                : result.code === "QUIZ_NOT_FOUND"
+                  ? 404
+                  : 400;
+        return reply.code(status).send(result);
+      }
       return result;
     },
   );

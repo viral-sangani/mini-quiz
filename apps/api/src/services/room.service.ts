@@ -3,6 +3,7 @@ import type { AdminLiveState, Choice, LeaderboardRow } from "@mini-quiz/shared";
 import { LOBBY_OPEN_LEAD_MS, computePoints } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
+import { enqueuePostAnswerBroadcasts } from "./broadcast-queue.js";
 
 export type JoinResult =
   | { quizId: string; roomPlayerId: string; userId: string }
@@ -109,29 +110,97 @@ export async function joinRoom(
   return { quizId: quiz.id, roomPlayerId: roomPlayer.id, userId: user.id };
 }
 
+// Grace window beyond questionTimeMs to accept stragglers — covers the
+// network round-trip + a small UI-side buffer. Anyone submitting after this
+// is rejected as STALE so we can't be tricked into awarding points for a
+// question whose time slot is long over.
+const ANSWER_DEADLINE_GRACE_MS = 2_000;
+
+export type SubmitError =
+  | "QUIZ_NOT_FOUND"
+  | "NOT_LIVE"
+  | "QUESTION_NOT_IN_QUIZ"
+  | "INVALID_ROOM_PLAYER"
+  | "WALLET_MISMATCH"
+  | "ALREADY_ANSWERED"
+  | "STALE";
+
+// Live-quiz answer submission. Lean hot path: validates ownership +
+// per-question deadline, persists the Answer + totalXp atomically, returns
+// {isCorrect, points} immediately. Side-effects (leaderboard recompute,
+// answer-distribution recompute, "Alice answered" broadcast) are enqueued
+// into the per-quiz coalesced broadcast queue and fan out on a 250-500ms
+// tick instead of inline. Critical for scale: a hot question at 100k players
+// would otherwise trigger 100k full leaderboard recomputes.
+//
+// Security:
+//   - walletAddress must match roomPlayer.user.walletAddress (prevents
+//     submitting on behalf of another player).
+//   - timeTakenMs is clamped server-side to [0, questionTimeMs]; client
+//     can't inflate points by lying.
+//   - per-question deadline rejects submissions for time-expired questions.
+//   - Answer @@unique([roomPlayerId, questionId]) blocks duplicate submits.
 export async function submitAnswer(
   code: string,
   input: {
+    walletAddress: string;
     roomPlayerId: string;
     questionId: string;
     choiceId: string;
     timeTakenMs: number;
   },
-): Promise<{ isCorrect: boolean; points: number } | { error: string }> {
+): Promise<
+  | { isCorrect: boolean; points: number }
+  | { error: string; code: SubmitError }
+> {
+  const wallet = input.walletAddress.toLowerCase();
+  // Single round-trip: pull quiz + only the question we care about + the
+  // roomPlayer + the user (for displayName + walletAddress check).
   const quiz = await prisma.quiz.findUnique({
     where: { code },
-    include: { questions: { where: { id: input.questionId } } },
+    select: {
+      id: true,
+      status: true,
+      questionTimeMs: true,
+      startedAt: true,
+      questions: {
+        where: { id: input.questionId },
+        select: { id: true, position: true, correctChoiceId: true },
+      },
+    },
   });
-  if (!quiz) return { error: "Quiz not found" };
-  if (quiz.status !== "LIVE") return { error: "Quiz is not live" };
+  if (!quiz) return { error: "Quiz not found", code: "QUIZ_NOT_FOUND" };
+  if (quiz.status !== "LIVE") return { error: "Quiz is not live", code: "NOT_LIVE" };
   const question = quiz.questions[0];
-  if (!question) return { error: "Question not in quiz" };
+  if (!question) return { error: "Question not in quiz", code: "QUESTION_NOT_IN_QUIZ" };
 
   const roomPlayer = await prisma.roomPlayer.findUnique({
     where: { id: input.roomPlayerId },
+    select: {
+      id: true,
+      quizId: true,
+      userId: true,
+      user: { select: { walletAddress: true, displayName: true } },
+    },
   });
   if (!roomPlayer || roomPlayer.quizId !== quiz.id) {
-    return { error: "Invalid roomPlayerId" };
+    return { error: "Invalid roomPlayerId", code: "INVALID_ROOM_PLAYER" };
+  }
+  if ((roomPlayer.user.walletAddress ?? "").toLowerCase() !== wallet) {
+    return { error: "Wallet does not own this room player", code: "WALLET_MISMATCH" };
+  }
+
+  // Per-question deadline. Each question N occupies the slot
+  // [startedAt + N*questionTimeMs, startedAt + (N+1)*questionTimeMs).
+  // Plus a grace window for network latency + animation hold.
+  if (quiz.startedAt) {
+    const deadline =
+      quiz.startedAt.getTime() +
+      (question.position + 1) * quiz.questionTimeMs +
+      ANSWER_DEADLINE_GRACE_MS;
+    if (Date.now() > deadline) {
+      return { error: "Question deadline has passed", code: "STALE" };
+    }
   }
 
   const isCorrect = input.choiceId === question.correctChoiceId;
@@ -165,36 +234,20 @@ export async function submitAnswer(
   } catch (e) {
     // Unique (roomPlayerId, questionId) collision = duplicate submit → no-op.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return { error: "Already answered" };
+      return { error: "Already answered", code: "ALREADY_ANSWERED" };
     }
     throw e;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: roomPlayer.userId },
-    select: { displayName: true },
-  });
-  broadcast(quiz.id, {
-    type: "answer_submitted",
-    userId: roomPlayer.userId,
-    displayName: user?.displayName ?? "Player",
-    questionPosition: question.position,
-    isCorrect,
-  });
-
-  // Recompute + broadcast leaderboard (cheap for ~50 players).
-  const rows = await leaderboard(quiz.id);
-  broadcast(quiz.id, { type: "leaderboard", rows });
-
-  // Broadcast answer distribution for the current question — admin live monitor
-  // listens. Cheap aggregate over ~50 players.
-  const distribution = await answerDistributionForQuestion(question.id);
-  broadcast(quiz.id, {
-    type: "answer_distribution",
+  // Defer all fan-out work. The user already has their feedback; everyone
+  // else can wait the broadcast tick.
+  enqueuePostAnswerBroadcasts({
+    quizId: quiz.id,
     questionId: question.id,
     questionPosition: question.position,
-    distribution,
-    answeredCount: distribution.reduce((a, b) => a + b.count, 0),
+    userId: roomPlayer.userId,
+    displayName: roomPlayer.user.displayName ?? "Player",
+    isCorrect,
   });
 
   return { isCorrect, points };

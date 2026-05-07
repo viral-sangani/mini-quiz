@@ -305,14 +305,33 @@ function PlayInner() {
 
   const submitAnswer = useCallback(
     async (choiceId: string) => {
-      if (!roomPlayerId || !currentQuestion || resolving) return;
+      if (!roomPlayerId || !currentQuestion || !walletAddress || resolving)
+        return;
+      // Lock the picked tile + dim siblings IMMEDIATELY. The render below this
+      // line happens before the network round trip, which kills the perceived
+      // 2-3s latency the user complained about.
       setResolving(true);
       setSelectedChoiceId(choiceId);
-      const timeTakenMs = Date.now() - questionStartedAt;
+      // Light haptic — MiniPay's WebView supports it. Cheap, instant feedback.
+      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+        try {
+          navigator.vibrate(15);
+        } catch {
+          // Some browsers reject vibrate without user-gesture; we already had one.
+        }
+      }
+      const clickedAt = Date.now();
+      const timeTakenMs = clickedAt - questionStartedAt;
+      // Schedule the advance from click time, NOT response time, so feedback
+      // duration is consistent regardless of network latency. Network slowness
+      // eats into the feedback hold instead of bleeding into the next question.
+      if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = setTimeout(advanceToNext, FEEDBACK_HOLD_MS);
       try {
         const data = await api.post<{ isCorrect: boolean; points: number }>(
           `/rooms/${code}/answer`,
           {
+            walletAddress,
             roomPlayerId,
             questionId: currentQuestion.id,
             choiceId,
@@ -328,14 +347,29 @@ function PlayInner() {
           setStreak(0);
         }
         setTotalPoints((p) => p + (data.points || 0));
-        if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-        advanceTimerRef.current = setTimeout(advanceToNext, FEEDBACK_HOLD_MS);
-      } catch {
-        if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-        advanceTimerRef.current = setTimeout(advanceToNext, 800);
+      } catch (e) {
+        // The server rejected — show "didn't register" feedback so the user
+        // knows their tap was lost, then move on. Common cases: STALE
+        // (deadline passed), WALLET_MISMATCH (shouldn't happen on real
+        // hardware), ALREADY_ANSWERED (race with auto-submit).
+        if (e instanceof ApiError && e.code === "ALREADY_ANSWERED") {
+          // Treat as a no-op — server already has our answer; don't alarm.
+          setAnswerResult({ isCorrect: false, points: 0 });
+        } else {
+          setAnswerResult({ isCorrect: false, points: 0 });
+        }
       }
     },
-    [advanceToNext, code, currentQuestion, questionStartedAt, resolving, roomPlayerId],
+    [
+      advanceToNext,
+      code,
+      currentQuestion,
+      questionStartedAt,
+      quiz?.questionTimeMs,
+      resolving,
+      roomPlayerId,
+      walletAddress,
+    ],
   );
 
   // Question-time-up: auto-submit empty.
@@ -837,10 +871,18 @@ function QuestionScreen({
   const pct = (left / (quiz.questionTimeMs ?? 15_000)) * 100;
   const timeColor =
     pct > 60 ? "var(--primary)" : pct > 30 ? "var(--accent)" : "var(--wrong)";
+  // Three states for choice tiles:
+  //   - idle: no pick yet → all tiles tappable
+  //   - locked: user tapped, server response not in yet → picked tile shows
+  //     a neutral pressed look + checkmark, others disabled + dimmed
+  //   - resolved: server returned → picked tile turns green/red, correct
+  //     answer revealed if user was wrong
+  const isLocked = selectedChoiceId !== null;
+  const isResolved = answerResult !== null;
+  const showFeedback = isResolved;
   const correctChoiceId = answerResult?.isCorrect ? selectedChoiceId : null;
   const wrongChoiceId =
     answerResult && !answerResult.isCorrect ? selectedChoiceId : null;
-  const showFeedback = answerResult !== null;
 
   return (
     <main
@@ -900,7 +942,9 @@ function QuestionScreen({
               ? answerResult.isCorrect
                 ? `+${answerResult.points} POINTS`
                 : "+0 POINTS"
-              : "FAST = MORE PTS"}
+              : isLocked
+                ? "LOCKED IN…"
+                : "FAST = MORE PTS"}
           </span>
         </div>
       </div>
@@ -1005,13 +1049,34 @@ function QuestionScreen({
                 color: "var(--ink)",
               };
             }
+          } else if (isLocked) {
+            // Optimistic: tap registered, awaiting server. Picked tile gets
+            // a pressed-in look in its accent color so the user sees a beat.
+            // Sibling tiles dim out so they look "out of contention".
+            if (isPicked) {
+              chrome = {
+                background: accent,
+                border: `2px solid ${accent}`,
+                boxShadow: "0 1px 0 0 rgba(0,0,0,0.15)",
+                color: "white",
+                transform: "translateY(2px)",
+              };
+            } else {
+              chrome = {
+                background: "var(--card)",
+                border: "2px solid var(--line)",
+                boxShadow: "0 4px 0 0 var(--line)",
+                opacity: 0.45,
+                color: "var(--ink)",
+              };
+            }
           }
 
           return (
             <button
               key={c.id}
-              onClick={() => !showFeedback && onPick(c.id)}
-              disabled={showFeedback}
+              onClick={() => !isLocked && !showFeedback && onPick(c.id)}
+              disabled={isLocked || showFeedback}
               style={{
                 ...chrome,
                 borderRadius: 18,
@@ -1023,7 +1088,7 @@ function QuestionScreen({
                 justifyContent: "space-between",
                 gap: 8,
                 position: "relative",
-                cursor: showFeedback ? "default" : "pointer",
+                cursor: isLocked || showFeedback ? "default" : "pointer",
                 fontFamily: "var(--font-display)",
                 fontWeight: 900,
                 fontSize: 17,
@@ -1071,6 +1136,24 @@ function QuestionScreen({
                     color={isCorrect ? "var(--primary-shade)" : "var(--wrong-shade)"}
                     strokeWidth={4}
                   />
+                </span>
+              )}
+              {isLocked && !showFeedback && isPicked && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 10,
+                    right: 10,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,0.85)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Icon name="check" size={14} color={accent} strokeWidth={4} />
                 </span>
               )}
             </button>
