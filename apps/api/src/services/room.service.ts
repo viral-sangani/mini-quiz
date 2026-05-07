@@ -59,7 +59,9 @@ export async function joinRoom(
   const existing = await prisma.user.findUnique({
     where: { walletAddress: addr },
   });
-  if (!existing || !existing.displayName || !existing.username) {
+  if (!existing || existing.deletedAt || !existing.displayName || !existing.username) {
+    // Soft-deleted users can't rejoin under their old wallet — they look like
+    // a fresh, un-onboarded user (no displayName/username).
     return {
       error: "Profile incomplete — finish onboarding to join",
       code: "NEEDS_ONBOARDING",
@@ -278,7 +280,7 @@ export async function getLiveState(
 
 export async function leaderboard(quizId: string): Promise<LeaderboardRow[]> {
   const rows = await prisma.roomPlayer.findMany({
-    where: { quizId },
+    where: { quizId, user: { deletedAt: null } },
     include: {
       user: {
         select: {

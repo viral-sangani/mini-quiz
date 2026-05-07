@@ -38,6 +38,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
       const onlyFlagged = req.query.flagged === "true";
       const rows = await prisma.user.findMany({
         where: {
+          deletedAt: null,
           ...(q
             ? {
                 OR: [
@@ -111,6 +112,40 @@ export async function adminUserRoutes(app: FastifyInstance) {
         },
       });
       return { user: serialize(updated) };
+    },
+  );
+
+  // Soft-delete. Sets `deletedAt = now()` so the user disappears from /players,
+  // leaderboards, room state, and public profile lookups. Refuses to delete
+  // ADMIN role users — revoke admin first via /admins. Foreign keys (Answer,
+  // Payout, RoomPlayer) survive intact, so an UPDATE in the DB undoes this.
+  app.delete<{ Params: { id: string } }>(
+    "/admin/users/:id",
+    async (req, reply) => {
+      const admin = await requireAdmin(req, reply);
+      if (!admin) return;
+      if (req.params.id === admin.userId) {
+        return reply.code(400).send({ error: "Cannot delete yourself" });
+      }
+      const target = await prisma.user.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, role: true, deletedAt: true },
+      });
+      if (!target) return reply.code(404).send({ error: "User not found" });
+      if (target.role === "ADMIN") {
+        return reply.code(400).send({
+          error: "Cannot delete an admin. Revoke admin access first.",
+        });
+      }
+      if (target.deletedAt) {
+        // Idempotent — already deleted.
+        return reply.code(204).send();
+      }
+      await prisma.user.update({
+        where: { id: req.params.id },
+        data: { deletedAt: new Date() },
+      });
+      return reply.code(204).send();
     },
   );
 }

@@ -88,6 +88,25 @@ export default function PlayersPage() {
     }
   };
 
+  const remove = async (u: AdminUser) => {
+    const label = u.displayName ?? u.username ?? u.email ?? "this player";
+    if (
+      !confirm(
+        `Delete ${label}? They'll disappear from /players, leaderboards, ` +
+          `and lobbies. Their answer + payout history is preserved. ` +
+          `Reversible from the database.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await adminApi.del(`/admin/users/${u.id}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
   return (
     <>
       <TopBar title="Players" />
@@ -257,6 +276,7 @@ export default function PlayersPage() {
                         onRevoke={() => void promote(u.id, "USER")}
                         onFlag={() => setFlagFor(u)}
                         onUnflag={() => void unflag(u.id)}
+                        onDelete={() => void remove(u)}
                       />
                     </td>
                   </tr>
@@ -285,12 +305,14 @@ function RowMenu({
   onRevoke,
   onFlag,
   onUnflag,
+  onDelete,
 }: {
   user: AdminUser;
   onPromote: () => void;
   onRevoke: () => void;
   onFlag: () => void;
   onUnflag: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
@@ -314,6 +336,16 @@ function RowMenu({
           style={{ color: "var(--a-wrong)" }}
         >
           <AdminIcon name="flag" size={12} color="var(--a-wrong)" /> Flag
+        </button>
+      )}
+      {/* Delete is hidden for ADMIN rows — backend refuses too. Revoke admin first. */}
+      {user.role !== "ADMIN" && (
+        <button
+          onClick={onDelete}
+          className="adm-btn adm-btn--sm adm-btn--danger"
+          title="Soft-delete this player. Reversible from the database."
+        >
+          Delete
         </button>
       )}
     </div>

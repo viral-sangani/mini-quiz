@@ -43,10 +43,14 @@ export async function globalLeaderboard(
 ): Promise<{ rows: GlobalLeaderboardRow[]; viewer: GlobalLeaderboardRow | null }> {
   const start = startOfPeriod(period);
 
-  // Aggregate sum(points) per userId in the period.
+  // Aggregate sum(points) per userId in the period. Filter out answers
+  // belonging to soft-deleted users so they vanish from leaderboards.
   const grouped = await prisma.answer.groupBy({
     by: ["userId"],
-    where: start ? { submittedAt: { gte: start } } : undefined,
+    where: {
+      ...(start ? { submittedAt: { gte: start } } : {}),
+      user: { deletedAt: null },
+    },
     _sum: { points: true },
     orderBy: { _sum: { points: "desc" } },
     take: TOP_N,
@@ -57,7 +61,7 @@ export async function globalLeaderboard(
   // we still show the user's lifetime level since "level" is a property of the
   // person, not the period).
   const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
+    where: { id: { in: userIds }, deletedAt: null },
     select: {
       id: true,
       username: true,
@@ -110,13 +114,14 @@ export async function globalLeaderboard(
         where: {
           userId: { not: viewerUserId },
           ...(start ? { submittedAt: { gte: start } } : {}),
+          user: { deletedAt: null },
         },
         _sum: { points: true },
         having: { points: { _sum: { gt: points } } },
       });
 
-      const me = await prisma.user.findUnique({
-        where: { id: viewerUserId },
+      const me = await prisma.user.findFirst({
+        where: { id: viewerUserId, deletedAt: null },
         select: {
           id: true,
           username: true,

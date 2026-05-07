@@ -78,7 +78,12 @@ export async function checkUsername(value: string): Promise<CheckUsernameResult>
       suggestions: suggestionsFor(v),
     };
   }
-  const existing = await prisma.user.findUnique({ where: { username: v } });
+  // Soft-deleted users free up their username — `findUnique` would still
+  // match them (uniqueness is at DB level), so use `findFirst` with the
+  // deletedAt filter so a deleted user's handle is reusable.
+  const existing = await prisma.user.findFirst({
+    where: { username: v, deletedAt: null },
+  });
   if (existing) {
     return {
       available: false,
@@ -162,8 +167,8 @@ export async function getPublicProfile(userId: string): Promise<
     })
   | null
 > {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  const user = await prisma.user.findFirst({
+    where: { id: userId, deletedAt: null },
     include: { badges: true },
   });
   if (!user) return null;
@@ -224,7 +229,10 @@ export async function updateMyProfile(
       return { error: "Username not allowed", code: "USERNAME_BLOCKED" };
     }
     // Reserve via the DB unique constraint; we still pre-check to give a clean error.
-    const existing = await prisma.user.findUnique({ where: { username: u } });
+    // Soft-deleted users don't block username reuse.
+    const existing = await prisma.user.findFirst({
+      where: { username: u, deletedAt: null },
+    });
     if (existing && existing.walletAddress !== addr) {
       return { error: "Username taken", code: "USERNAME_TAKEN" };
     }

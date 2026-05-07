@@ -63,6 +63,11 @@ model User {
   flagReason    String?
   flaggedAt     DateTime?
   flaggedById   String?
+  // Soft delete. Set by admin via DELETE /admin/users/:id. Reads filter
+  // `deletedAt: null` so the user disappears from /players, leaderboards,
+  // room lists, and public profile lookups. Foreign keys (Answer, Payout,
+  // RoomPlayer) survive — restore is a single SQL UPDATE.
+  deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

@@ -112,12 +112,18 @@ export async function getAdminStats(): Promise<AdminStats> {
     confirmedThisMonth,
   ] = await Promise.all([
     prisma.answer.findMany({
-      where: { submittedAt: { gte: todayStart, lt: tomorrowStart } },
+      where: {
+        submittedAt: { gte: todayStart, lt: tomorrowStart },
+        user: { deletedAt: null },
+      },
       select: { userId: true },
       distinct: ["userId"],
     }),
     prisma.answer.findMany({
-      where: { submittedAt: { gte: yesterdayStart, lt: todayStart } },
+      where: {
+        submittedAt: { gte: yesterdayStart, lt: todayStart },
+        user: { deletedAt: null },
+      },
       select: { userId: true },
       distinct: ["userId"],
     }),
@@ -192,7 +198,7 @@ export async function getAdminStats(): Promise<AdminStats> {
       where: { status: "FAILED" },
       select: { amount: true },
     }),
-    prisma.user.count({ where: { flagged: true } }),
+    prisma.user.count({ where: { flagged: true, deletedAt: null } }),
   ]);
 
   return {
