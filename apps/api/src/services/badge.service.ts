@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../db.js";
 import { type BadgeId } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
 import { leaderboard } from "./room.service.js";

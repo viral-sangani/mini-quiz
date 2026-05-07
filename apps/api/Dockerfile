@@ -25,7 +25,7 @@ RUN pnpm --filter @mini-quiz/api deploy --prod /pruned
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
-RUN apk add --no-cache openssl tini
+RUN apk add --no-cache openssl tini && corepack enable
 
 ENV NODE_ENV=production \
     PORT=4000
@@ -34,6 +34,11 @@ COPY --from=build /pruned/node_modules ./node_modules
 COPY --from=build /repo/apps/api/dist ./dist
 COPY --from=build /repo/apps/api/prisma ./prisma
 COPY --from=build /repo/apps/api/package.json ./
+
+# pnpm deploy --prod doesn't copy the .prisma generated client (it lives
+# outside the package boundary in pnpm's .pnpm store). Re-run generate
+# inside the runtime layout so @prisma/client can find the runtime engine.
+RUN node_modules/.bin/prisma generate --schema prisma/schema.prisma
 
 EXPOSE 4000
 

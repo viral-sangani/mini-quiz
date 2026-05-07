@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../db.js";
 import type { AdminLiveState, Choice, LeaderboardRow } from "@mini-quiz/shared";
 import { LOBBY_OPEN_LEAD_MS, computePoints } from "@mini-quiz/shared";
 import { prisma } from "../db.js";

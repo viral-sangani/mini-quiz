@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../db.js";
 import {
   AVATAR_COLORS,
   AVATAR_EMOJIS,
