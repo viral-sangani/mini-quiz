@@ -39,7 +39,13 @@ const schema = z.object({
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
   MOONSHOT_BASE_URL: z.string().url().default("https://api.moonshot.ai/v1"),
-  MOONSHOT_MODEL: z.string().default("kimi-k2.6"),
+  // moonshot-v1-8k is the fastest non-reasoning Kimi model on Moonshot's
+  // platform (~15-20s for 10 quiz questions with explanations vs 60-90s for
+  // kimi-k2.6). For structured-output tasks like quiz generation we don't
+  // need the reasoning model — kimi-k2.6 also occasionally emits empty
+  // assistant messages because reasoning tokens consume the maxOutputTokens
+  // budget.
+  MOONSHOT_MODEL: z.string().default("moonshot-v1-8k"),
 });
 
 export type Config = z.infer<typeof schema>;

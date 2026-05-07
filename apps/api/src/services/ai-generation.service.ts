@@ -7,13 +7,18 @@ import { config } from "../config.js";
 // AI question generation via Kimi/Moonshot. Uses Vercel AI SDK v6 with the
 // OpenAI-compatible provider pointed at Moonshot's endpoint.
 //
-// Why we don't use AI SDK's Output.object({schema}): that sets the OpenAI
-// `responseFormat: json_schema` parameter, which Kimi's API silently
-// ignores (logs a warning then drops it). The model then returns plain
-// text and AI SDK throws NoOutputGeneratedError ~112s later. Instead we
-// instruct the model strongly in the system prompt to emit ONLY JSON,
-// strip code fences if any sneak in, and validate with Zod ourselves —
-// portable across every OpenAI-compatible provider.
+// Why we don't use Output.object({schema}): that sets responseFormat=json_schema,
+// which Moonshot doesn't support (logs a warning, then either ignores it or
+// returns empty). Instead we use the loose json_object mode (responseFormat
+// passed via providerOptions below) AND a strict system prompt, then parse +
+// Zod-validate ourselves. Portable across every OpenAI-compatible provider.
+//
+// Defaults to moonshot-v1-8k (fast, deterministic) instead of kimi-k2.6 (a
+// reasoning model, much slower, can emit empty assistant content when
+// reasoning tokens consume the entire output budget).
+//
+// Reliability: a single attempt has a hard 90s timeout. On empty/invalid
+// output we retry once with stricter instructions before giving up.
 
 export type GeneratedChoice = { id: string; label: string };
 export type GeneratedQuestion = {
@@ -134,32 +139,52 @@ function buildModel() {
   return provider.languageModel(config.MOONSHOT_MODEL);
 }
 
-export async function generateQuestions(
+// Single attempt at generation. Returns raw validated questions. Throws on
+// empty / invalid output / network error.
+async function attemptGeneration(
   opts: GenerateOptions,
+  attempt: number,
 ): Promise<GeneratedQuestion[]> {
-  if (opts.count < 1 || opts.count > 20) {
-    throw new Error("count must be between 1 and 20");
-  }
   const model = buildModel();
-  // Token budget. Kimi K2.6 has a 262k context window so we can be generous.
-  // Empirically a 10-question response with explanations runs ~3-4k output
-  // tokens; we double that to leave room for unusually verbose explanations
-  // without triggering mid-array truncation (which makes the JSON unparseable).
-  const perQuestion = opts.withExplanations ? 600 : 200;
-  const maxOutputTokens = Math.min(16_000, 500 + opts.count * perQuestion);
+  // Token budget. moonshot-v1-8k has 8k context, so 4k output is the safe
+  // ceiling. Empirically 10 questions with explanations is ~3-3.5k tokens
+  // of output. For larger models we'd let this go higher, but capping
+  // protects against pathological prompts.
+  const perQuestion = opts.withExplanations ? 350 : 150;
+  const maxOutputTokens = Math.min(4_000, 400 + opts.count * perQuestion);
 
-  const result = await generateText({
-    model,
-    system: buildSystemPrompt(),
-    prompt: buildUserPrompt(opts),
-    // No `output:` (responseFormat) — Kimi rejects schemas via that path.
-    // We parse + validate ourselves below.
-    maxOutputTokens,
-  });
+  // Hard timeout — Moonshot occasionally hangs. AbortController so the
+  // socket actually closes instead of waiting on global fetch defaults.
+  const ac = new AbortController();
+  const TIMEOUT_MS = 90_000;
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
 
-  const text = result.text ?? "";
+  let text = "";
+  try {
+    const result = await generateText({
+      model,
+      system: buildSystemPrompt(),
+      prompt: buildUserPrompt(opts),
+      maxOutputTokens,
+      abortSignal: ac.signal,
+      // Loose JSON mode. Moonshot supports response_format=json_object via
+      // the OpenAI-compatible provider (but NOT json_schema, which is why
+      // we don't use Output.object).
+      providerOptions: {
+        moonshot: { responseFormat: { type: "json_object" } },
+      },
+    });
+    text = result.text ?? "";
+  } finally {
+    clearTimeout(timer);
+  }
+
   if (!text.trim()) {
-    throw new Error("Model returned empty response");
+    throw new Error(
+      attempt === 1
+        ? "Model returned empty response"
+        : "Model returned empty response (after retry)",
+    );
   }
   const jsonBlock = extractJsonBlock(text);
   let parsed: unknown;
@@ -174,13 +199,38 @@ export async function generateQuestions(
   if (!safe.success) {
     throw new Error(`Model response failed schema check: ${safe.error.message}`);
   }
-  // The model might return fewer or more than requested; trim to count.
   const trimmed = safe.data.questions.slice(0, opts.count);
   validateQuestions(trimmed);
-  return trimmed.map((q) => ({
-    ...q,
-    // Frontend uses this as a stable React key during the review/edit step
-    // before save. Ignored by the server bulk-save endpoint.
-    ...({ _draftId: nanoid(8) } as object),
-  }));
+  return trimmed;
+}
+
+export async function generateQuestions(
+  opts: GenerateOptions,
+): Promise<GeneratedQuestion[]> {
+  if (opts.count < 1 || opts.count > 20) {
+    throw new Error("count must be between 1 and 20");
+  }
+  // First attempt. On empty / parse-fail / timeout we retry exactly once;
+  // hard errors (auth, schema validation of well-formed but wrong content)
+  // surface immediately on the second attempt as well so we don't loop.
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const questions = await attemptGeneration(opts, attempt);
+      return questions.map((q) => ({
+        ...q,
+        // Frontend uses this as a stable React key during the review/edit
+        // step before save. Ignored by the server bulk-save endpoint.
+        ...({ _draftId: nanoid(8) } as object),
+      }));
+    } catch (e) {
+      lastErr = e;
+      // Don't retry obvious permanent failures.
+      if (e instanceof AiGenerationDisabledError) throw e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("count must be between")) throw e;
+      // Otherwise loop once more.
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("AI generation failed");
 }
