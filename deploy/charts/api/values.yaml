@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/celo-org/miniquiz-api
+  repository: docker.io/viralsangani/miniquiz-api
   tag: "latest"
   pullPolicy: IfNotPresent
 

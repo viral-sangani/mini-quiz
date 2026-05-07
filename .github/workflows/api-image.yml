@@ -11,19 +11,15 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 env:
-  REGISTRY: ghcr.io
+  IMAGE_NAME: miniquiz-api
 
 jobs:
   build-push:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
-    env:
-      OWNER: ${{ github.repository_owner }}
-      SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,21 +34,19 @@ jobs:
 
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - uses: docker/build-push-action@v6
-        env:
-          IMAGE_TAG: ${{ steps.meta.outputs.tag }}
-          OWNER_LC: ${{ github.repository_owner }}
         with:
           context: .
           file: apps/api/Dockerfile
           push: true
+          platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/miniquiz-api:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/miniquiz-api:latest
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
