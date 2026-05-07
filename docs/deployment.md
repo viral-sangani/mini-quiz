@@ -1,6 +1,6 @@
 # Deployment
 
-> Last updated: **2026-05-07**.
+> Last updated: **2026-05-07** (Tofu state moved to R2).
 > Update triggers: cluster topology change, region change, new infra
 > resource, image registry move, CI workflow change.
 
@@ -17,7 +17,7 @@
 | Argo source repo | `viral-sangani/mini-quiz` (public mirror) | celo-org repo private, PAT pending |
 | TLS | Cloudflare edge + Let's Encrypt origin (HTTP-01) | Free + DDoS absorption |
 | DNS | Cloudflare proxied (orange cloud) | Free + fast |
-| Tofu state | DO Spaces `s3://miniquiz-tfstate/infra.tfstate` | Durable, cheap |
+| Tofu state | Cloudflare R2 `s3://miniquiz-tfstate/infra.tfstate` | Free tier ($0/mo), s3-compatible |
 
 ## Cluster facts
 
@@ -186,13 +186,13 @@ sealed secret").
 
 | Line | $/mo |
 |---|---|
-| 1× `s-4vcpu-8gb` node | $48 |
+| 1× `s-4vcpu-8gb` node | $48.00 |
 | Block storage (~35 GiB) | ~$3.50 |
-| DO Spaces (state bucket, well under 250 GB) | $5 |
-| **Total** | **~$56/mo** |
+| **Total** | **~$51.50/mo** |
 
-Free: Cloudflare DNS+proxy+TLS, Docker Hub, Let's Encrypt, GitHub
-Actions (public repo).
+Free: Cloudflare DNS+proxy+TLS, Cloudflare R2 (Tofu state, ~18 KiB out
+of 10 GiB free tier), Docker Hub, Let's Encrypt, GitHub Actions
+(public repo).
 
 ## Out of scope (do not add without asking)
 

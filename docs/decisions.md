@@ -1,6 +1,6 @@
 # Decisions
 
-> Last updated: **2026-05-07**.
+> Last updated: **2026-05-07** (Tofu state moved to R2).
 > Append-only log of non-obvious choices. Add a new entry when you make
 > a structural decision that a future agent (or human) would reasonably
 > question. Don't rewrite history; if a decision is overturned, add a
@@ -189,24 +189,30 @@ package (similar). Self-hosted registry (overkill).
 
 ---
 
-### 8. Tofu state in DO Spaces (s3-compatible backend)
+### 8. Tofu state in Cloudflare R2 (s3-compatible backend) [SUPERSEDES original DO Spaces choice]
 
-**Context**: Tofu state must survive the laptop being lost + multiple
-devs.
+**Context**: Tofu state must survive the laptop being lost.
+Originally lived in DO Spaces ($5/mo flat for an 18 KiB file).
 
-**Decision**: s3-style backend pointed at `s3://miniquiz-tfstate/infra.tfstate`
-in DO Spaces (region nyc3). Spaces keys are separate from the DO API
-token, kept in `.local/credentials.env`.
+**Decision**: s3-style backend pointed at
+`https://<acct>.r2.cloudflarestorage.com` bucket `miniquiz-tfstate`,
+key `infra.tfstate`. R2 token (Object R/W, scoped to bucket) in
+`.local/credentials.env` as `R2_ACCESS_KEY_ID` /
+`R2_SECRET_ACCESS_KEY`.
 
-**Why**: $5/mo for durable, multi-AZ-replicated state. Native s3
-protocol so any future migration to AWS/Cloudflare R2 is trivial.
+**Why**: Free tier (10 GiB + zero egress) easily covers a single state
+file forever. R2 speaks plain s3, so the only Tofu config diff is the
+endpoint URL and `region = "auto"`. Saves $5/mo.
 
-**Alternatives considered**: Local state (loses durability), Tofu
-Cloud (vendor lock-in for a small payoff).
+**Alternatives considered**: Local state (no durability if laptop is
+lost), DO Spaces ($5/mo for 18 KiB is wasteful), Tofu Cloud (vendor
+lock-in for a tiny payoff).
 
-**Consequences**: Three credentials to keep alive (DO API token, two
-Spaces keys). If state ever gets corrupted, manual recovery is
-needed — `tofu state pull` / `push`.
+**Consequences**: Three credentials to keep alive (DO API token, R2
+access key, R2 secret). If state ever gets corrupted, manual recovery
+via `tofu state pull` / `push`. Migration from Spaces to R2 done
+manually with `aws s3 cp` because Tofu's `init -migrate-state`
+requires both backends to be readable simultaneously.
 
 ---
 

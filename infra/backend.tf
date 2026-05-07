@@ -1,13 +1,13 @@
-# Tofu state lives in DO Spaces (S3-compatible).
-# Bucket: miniquiz-tfstate (region nyc3) — created once via:
-#   aws --endpoint-url=https://nyc3.digitaloceanspaces.com s3 mb s3://miniquiz-tfstate
-# Credentials come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars.
+# Tofu state lives in Cloudflare R2 (S3-compatible, $0/mo on free tier).
+# Bucket: miniquiz-tfstate — create once via the Cloudflare dashboard.
+# Credentials come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars
+# (set them to your R2 access key + secret).
 terraform {
   backend "s3" {
-    endpoints                   = { s3 = "https://nyc3.digitaloceanspaces.com" }
+    endpoints                   = { s3 = "https://820430406dd10c2cb0106885a314d550.r2.cloudflarestorage.com" }
     bucket                      = "miniquiz-tfstate"
     key                         = "infra.tfstate"
-    region                      = "us-east-1"
+    region                      = "auto"
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_region_validation      = true

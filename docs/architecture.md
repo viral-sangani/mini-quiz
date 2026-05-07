@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-07** (storage section added).
+> Last updated: **2026-05-07** (storage section + R2 migration).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -181,14 +181,15 @@ boot). Frontend env vars in each app's `next.config.mjs` and
 
 ## Storage usage
 
-**DO Spaces** (object storage, s3-compatible) — **1 bucket**:
+**Cloudflare R2** (object storage, s3-compatible) — **1 bucket**:
 
-| Bucket | Region | Used for | Size |
-|---|---|---|---|
-| `miniquiz-tfstate` | nyc3 | OpenTofu state (`infra.tfstate`) — read+written by `infra/backend.tf` | ~18 KiB / 250 GiB included |
+| Bucket | Used for | Size |
+|---|---|---|
+| `miniquiz-tfstate` | OpenTofu state (`infra.tfstate`) — read+written by `infra/backend.tf` | ~18 KiB / 10 GiB free tier |
 
-Cost: $5/mo flat (regardless of fill below 250 GiB + 1 TiB egress).
-Future use: Postgres WAL backups would land here or in Cloudflare R2 free tier.
+Cost: $0/mo (well below R2 free tier of 10 GiB storage + zero egress).
+Future use: Postgres WAL backups will land here too — same free tier
+covers it for the foreseeable future.
 
 **DO Block Storage** (CSI-provisioned PVCs) — **2 volumes**, both
 attached to the single worker node:

@@ -6,17 +6,20 @@ Everything inside the cluster after that is reconciled by Argo from `../deploy/`
 ## One-time setup
 
 ```bash
-# 1. Pre-create the state bucket (Spaces, S3-compatible)
-doctl spaces create miniquiz-tfstate --region nyc3
+# 1. Create a Cloudflare R2 bucket for Tofu state (free tier).
+#    Dashboard → R2 → Create bucket → name "miniquiz-tfstate".
+#    Then create an R2 API Token (Object Read & Write, scoped to that
+#    bucket). Copy the Access Key ID, Secret Access Key, and S3 endpoint.
 
-# 2. Export DO Spaces creds so the s3 backend can reach the bucket
-export AWS_ACCESS_KEY_ID=<spaces access id>
-export AWS_SECRET_ACCESS_KEY=<spaces secret key>
+# 2. Export R2 creds for the s3 backend
+export AWS_ACCESS_KEY_ID=<r2 access key id>
+export AWS_SECRET_ACCESS_KEY=<r2 secret access key>
+export AWS_DEFAULT_REGION=auto
 
-# 3. Set Tofu vars (or use a *.auto.tfvars file)
+# 3. Set the R2 endpoint in infra/backend.tf (already pinned to your bucket)
+
+# 4. Set Tofu vars (or use a *.auto.tfvars file)
 export TF_VAR_do_token=<DO API token>
-export TF_VAR_spaces_access_id=$AWS_ACCESS_KEY_ID
-export TF_VAR_spaces_secret_key=$AWS_SECRET_ACCESS_KEY
 export TF_VAR_argocd_repo_url=https://github.com/<you>/mini-quiz
 ```
 
