@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-07**.
+> Last updated: **2026-05-07** (storage section added).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -178,6 +178,39 @@ boot). Frontend env vars in each app's `next.config.mjs` and
   `DATABASE_URL`, `REDIS_URL` — composed in
   `deploy/charts/api/templates/deployment.yaml` from the `miniquiz-pg-app`
   + `redis-auth` Secrets.
+
+## Storage usage
+
+**DO Spaces** (object storage, s3-compatible) — **1 bucket**:
+
+| Bucket | Region | Used for | Size |
+|---|---|---|---|
+| `miniquiz-tfstate` | nyc3 | OpenTofu state (`infra.tfstate`) — read+written by `infra/backend.tf` | ~18 KiB / 250 GiB included |
+
+Cost: $5/mo flat (regardless of fill below 250 GiB + 1 TiB egress).
+Future use: Postgres WAL backups would land here or in Cloudflare R2 free tier.
+
+**DO Block Storage** (CSI-provisioned PVCs) — **2 volumes**, both
+attached to the single worker node:
+
+| PVC | Namespace | Mounted by | Size | Declared in |
+|---|---|---|---|---|
+| `miniquiz-pg-1` | `data` | CNPG Postgres pod | 30 GiB | `deploy/manifests/postgres-cluster.yaml` `spec.storage.size` |
+| `redis-data-redis-master-0` | `data` | Bitnami Redis master | 5 GiB | `deploy/apps/redis.yaml` Helm values `master.persistence.size` |
+
+StorageClass: `do-block-storage` (default, `Delete` reclaim,
+`allowVolumeExpansion: true`). Volumes are real DigitalOcean Volumes
+provisioned by `dobs.csi.digitalocean.com` and attached to whichever
+Droplet the Pod schedules to. Cost: $0.10/GiB/mo flat.
+
+To grow Postgres storage: bump `spec.storage.size` in
+`deploy/manifests/postgres-cluster.yaml`, push. CNPG triggers an
+online resize, no downtime.
+
+To switch Postgres to a "delete by accident, restore by hand" reclaim
+posture: change to `storageClass: do-block-storage-retain` in the
+`Cluster` CR. Existing data is unaffected; the change applies to new
+PVCs only.
 
 ## What's deliberately not here
 
