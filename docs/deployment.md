@@ -73,7 +73,7 @@ infra/
 ├── argocd-bootstrap.tf      # Argo CD helm_release + app-of-apps
 ├── argocd-values.yaml       # Argo CD chart values
 ├── app-of-apps.yaml.tpl     # template for the root Application
-├── backend.tf               # s3-style backend → DO Spaces
+├── backend.tf               # s3-style backend → Cloudflare R2
 └── terraform.tfvars         # GITIGNORED — contains DO_TOKEN
 
 deploy/
@@ -140,8 +140,10 @@ write` from the workflow's `permissions:` block).
 Two layers:
 
 1. **Bootstrap secrets** (one-time per cluster):
-   - DO API token + Spaces keys → in `.local/credentials.env` (gitignored)
-   - Read by Tofu via `TF_VAR_*` env or `terraform.tfvars` (gitignored)
+   - DO API token + Cloudflare R2 access key/secret → in
+     `.local/credentials.env` (gitignored)
+   - Read by Tofu via `TF_VAR_do_token` (DO API) and `AWS_ACCESS_KEY_ID`
+     / `AWS_SECRET_ACCESS_KEY` env vars (R2 backend)
 
 2. **Runtime secrets** (sealed at rest in git):
    - `api-secrets` (api ns): `NEXTAUTH_SECRET`, `ADMIN_EMAILS`,
