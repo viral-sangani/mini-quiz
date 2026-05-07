@@ -1,0 +1,42 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env", ".env.local"],
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "NEXTAUTH_SECRET",
+    "NEXTAUTH_URL",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "EMAIL_SERVER",
+    "EMAIL_FROM",
+    "NEXT_PUBLIC_API_BASE_URL",
+    "NEXT_PUBLIC_QUIZ_BASE_URL",
+    "NEXT_PUBLIC_ADMIN_BASE_URL",
+    "PORT",
+    "ADMIN_EMAILS",
+    "TREASURY_PRIVATE_KEY",
+    "CELO_RPC_URL",
+    "CORS_ORIGIN",
+    "LOG_LEVEL"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {},
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "start": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["build"]
+    }
+  }
+}

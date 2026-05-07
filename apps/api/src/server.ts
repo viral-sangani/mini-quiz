@@ -1,0 +1,83 @@
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import sensible from "@fastify/sensible";
+import { config } from "./config.js";
+import { prisma } from "./db.js";
+import { healthRoutes } from "./routes/health.js";
+import { publicLeaderboardRoutes } from "./routes/leaderboard.public.js";
+import { publicProfileRoutes } from "./routes/profile.public.js";
+import { publicQuizRoutes } from "./routes/quizzes.public.js";
+import { adminQuizRoutes } from "./routes/quizzes.admin.js";
+import { roomRoutes } from "./routes/rooms.js";
+import { adminPayoutRoutes } from "./routes/payouts.admin.js";
+import { adminStatsRoutes } from "./routes/admin-stats.admin.js";
+import { adminUserRoutes } from "./routes/users.admin.js";
+import { startScheduler, stopScheduler } from "./services/scheduler.js";
+
+async function main() {
+  const app = Fastify({
+    logger: {
+      level: config.LOG_LEVEL,
+      transport:
+        config.NODE_ENV === "development"
+          ? { target: "pino-pretty", options: { colorize: true, translateTime: "HH:MM:ss" } }
+          : undefined,
+    },
+    disableRequestLogging: config.NODE_ENV === "production" ? false : true,
+  });
+
+  await app.register(sensible);
+
+  // Accept empty JSON bodies on POSTs that legitimately have no payload
+  // (e.g. /admin/users/:id/unflag, /admin/quizzes/:id/end). Fastify's default
+  // parser rejects with FST_ERR_CTP_EMPTY_JSON_BODY otherwise.
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      const trimmed = typeof body === "string" ? body.trim() : "";
+      if (!trimmed) return done(null, {});
+      try {
+        done(null, JSON.parse(trimmed));
+      } catch (e) {
+        done(e as Error, undefined);
+      }
+    },
+  );
+  await app.register(cors, {
+    origin: config.CORS_ORIGIN.split(",").map((s) => s.trim()),
+    credentials: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  });
+
+  await app.register(healthRoutes);
+  await app.register(publicQuizRoutes);
+  await app.register(publicProfileRoutes);
+  await app.register(publicLeaderboardRoutes);
+  await app.register(roomRoutes);
+  await app.register(adminQuizRoutes);
+  await app.register(adminPayoutRoutes);
+  await app.register(adminStatsRoutes);
+  await app.register(adminUserRoutes);
+
+  const schedulerHandle = startScheduler(app.log);
+
+  const shutdown = async (signal: string) => {
+    app.log.info({ signal }, "shutting down");
+    stopScheduler(schedulerHandle);
+    await app.close();
+    await prisma.$disconnect();
+    process.exit(0);
+  };
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+  try {
+    await app.listen({ host: "0.0.0.0", port: config.PORT });
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
+}
+
+void main();

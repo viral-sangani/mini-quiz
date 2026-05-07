@@ -1,0 +1,234 @@
+// Mini Quiz — Prisma schema
+// Run migrations with:  pnpm --filter @mini-quiz/api prisma migrate dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum QuizStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ENDED
+  ARCHIVED
+}
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  BROADCAST
+  CONFIRMED
+  FAILED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// Unified User: admins authenticate via email+Google (NextAuth); players via
+// their MiniPay wallet. walletAddress is lowercase. Either email or
+// walletAddress (or both) can be null depending on the account type.
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  walletAddress String?   @unique
+  displayName   String?
+  // Player-only profile fields. username is unique + lowercase + [a-z0-9_]{3,20};
+  // avatarEmoji is one of a curated set; avatarColor is one of the design tokens.
+  username      String?   @unique
+  avatarEmoji   String?
+  avatarColor   String?
+  // Lifetime XP — sum of all `Answer.points` earned. Used for level calc + the
+  // "gems" stat on home/profile. Updated transactionally with each answer.
+  totalXp       Int       @default(0)
+  role          Role      @default(USER)
+  // Moderation. Set by an admin via /admin/users/:id/flag. flaggedBy is the
+  // admin who acted; flagReason is free-text. Cleared by /unflag.
+  flagged       Boolean   @default(false)
+  flagReason    String?
+  flaggedAt     DateTime?
+  flaggedById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  createdQuizzes Quiz[]       @relation("QuizCreator")
+  roomPlayers    RoomPlayer[]
+  answers        Answer[]
+  payouts        Payout[]
+  approvedPayouts Payout[]    @relation("PayoutApprover")
+  badges          UserBadge[]
+  flaggedBy      User?     @relation("UserFlaggedBy", fields: [flaggedById], references: [id])
+  flaggedUsers   User[]    @relation("UserFlaggedBy")
+
+  @@index([role])
+  @@index([username])
+  @@index([flagged])
+}
+
+// One row per (userId, badgeId). Awarded by badge.service.ts; idempotent via
+// unique constraint. badgeId is a string from the BADGE_CATALOG in
+// packages/shared/src/badges.ts (no enum so the catalog can grow without migrations).
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  awardedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+// NextAuth v5 Prisma adapter models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Quiz {
+  id             String     @id @default(cuid())
+  code           String     @unique
+  title          String
+  description    String?
+  status         QuizStatus @default(DRAFT)
+  scheduledStart DateTime?
+  startedAt      DateTime?
+  endedAt        DateTime?
+  questionTimeMs Int
+  prizeAmounts   String[]
+  // Visual hints surfaced on player home cards + admin list. Stored as design
+  // tokens (primary | berry | sky | accent | ink), mapped to CSS vars on render.
+  difficulty     Difficulty @default(MEDIUM)
+  coverColor     String     @default("primary")
+  archivedAt     DateTime?
+  createdById    String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  createdBy User         @relation("QuizCreator", fields: [createdById], references: [id])
+  questions Question[]
+  players   RoomPlayer[]
+  payouts   Payout[]
+
+  @@index([status, scheduledStart])
+  @@index([archivedAt])
+}
+
+model Question {
+  id              String   @id @default(cuid())
+  quizId          String
+  position        Int
+  prompt          String
+  choices         Json
+  correctChoiceId String
+
+  quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers Answer[]
+
+  @@unique([quizId, position])
+}
+
+model RoomPlayer {
+  id       String   @id @default(cuid())
+  quizId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id])
+  answers Answer[]
+
+  @@unique([quizId, userId])
+  @@index([quizId])
+}
+
+model Answer {
+  id           String   @id @default(cuid())
+  roomPlayerId String
+  questionId   String
+  userId       String
+  choiceId     String
+  submittedAt  DateTime @default(now())
+  timeTakenMs  Int
+  isCorrect    Boolean
+  points       Int
+
+  roomPlayer RoomPlayer @relation(fields: [roomPlayerId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@unique([roomPlayerId, questionId])
+  @@index([questionId])
+}
+
+model Payout {
+  id            String       @id @default(cuid())
+  quizId        String
+  userId        String
+  rank          Int
+  amount        String
+  tokenAddress  String
+  status        PayoutStatus @default(PENDING)
+  approvedById  String?
+  txHash        String?
+  confirmedAt   DateTime?
+  failureReason String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  quiz       Quiz  @relation(fields: [quizId], references: [id])
+  user       User  @relation(fields: [userId], references: [id])
+  approvedBy User? @relation("PayoutApprover", fields: [approvedById], references: [id])
+
+  @@unique([quizId, rank])
+  @@index([status])
+}
