@@ -28,11 +28,11 @@ deploy/
 
 ## Replace before first apply
 
-Search the directory for `viral-sangani` — these are the GitHub repo path. Set
-them to your fork URL (e.g. `viral-sangani/mini-quiz`).
+Search the directory for `celo-org` — these are the GitHub repo path. Set
+them to your fork URL (e.g. `celo-org/mini-quiz`).
 
 ```bash
-grep -rl viral-sangani deploy/ | xargs sed -i '' 's|viral-sangani|viral-sangani|g'
+grep -rl celo-org deploy/ | xargs sed -i '' 's|celo-org|celo-org|g'
 ```
 
 ## Promote a new api image
