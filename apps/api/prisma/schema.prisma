@@ -76,10 +76,26 @@ model User {
   badges          UserBadge[]
   flaggedBy      User?     @relation("UserFlaggedBy", fields: [flaggedById], references: [id])
   flaggedUsers   User[]    @relation("UserFlaggedBy")
+  // Admins authenticate via email + bcrypt-hashed password. Players have
+  // adminCredential = null. Created by POST /admin/auth/admins (or seed).
+  adminCredential AdminCredential?
 
   @@index([role])
   @@index([username])
   @@index([flagged])
+}
+
+// Admin password storage. 1:1 with User (PK is User.id). Created via the
+// admin-auth API or the seed script; deleted when an admin is revoked.
+// Kept separate from User so player rows stay clean and so password material
+// can be dropped wholesale without touching User.
+model AdminCredential {
+  userId            String    @id
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passwordHash      String
+  passwordUpdatedAt DateTime  @default(now())
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
 }
 
 // One row per (userId, badgeId). Awarded by badge.service.ts; idempotent via

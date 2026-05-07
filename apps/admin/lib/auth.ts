@@ -1,70 +1,69 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
-import Google from "next-auth/providers/google";
-import Nodemailer from "next-auth/providers/nodemailer";
+import Credentials from "next-auth/providers/credentials";
 
-// NextAuth v5 with JWT-only sessions and an ADMIN_EMAILS allowlist —
-// no Prisma adapter, no DB rows. Anyone whose verified email is in
-// ADMIN_EMAILS gets `role: "ADMIN"` baked into the JWT. The Fastify api
-// re-checks the same allowlist server-side.
+// Email + password auth via NextAuth Credentials provider. The actual
+// password verification happens in the api at POST /admin/auth/login —
+// the admin app never sees the passwordHash. NextAuth just relays the
+// returned identity into a JWT that the api re-verifies on every call.
 //
-// Trade-off: demoting an admin = remove from ADMIN_EMAILS env var on the
-// api Pod (sealed-secret rotation, ~1 min). No per-user role storage.
-//
-// See docs/decisions.md #13.
+// See docs/decisions.md (next entry to add) for why we dropped the
+// allowlist + Google OAuth flow.
 
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
-
-function isAdminEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return ADMIN_EMAILS.includes(email.toLowerCase());
-}
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
 const providers: NextAuthConfig["providers"] = [
-  Google({
-    clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  Credentials({
+    name: "Email + Password",
+    credentials: {
+      email: { label: "Email", type: "email" },
+      password: { label: "Password", type: "password" },
+    },
+    async authorize(rawCredentials) {
+      const email =
+        typeof rawCredentials?.email === "string"
+          ? rawCredentials.email.trim().toLowerCase()
+          : "";
+      const password =
+        typeof rawCredentials?.password === "string" ? rawCredentials.password : "";
+      if (!email || !password) return null;
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/admin/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+          cache: "no-store",
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as {
+          userId: string;
+          email: string;
+          role: "ADMIN";
+        };
+        return { id: data.userId, email: data.email, role: data.role };
+      } catch {
+        return null;
+      }
+    },
   }),
 ];
-
-// Nodemailer requires a real SMTP URL — only enable it when configured.
-if (process.env.EMAIL_SERVER) {
-  providers.push(
-    Nodemailer({
-      server: process.env.EMAIL_SERVER,
-      from: process.env.EMAIL_FROM ?? "no-reply@example.com",
-    }),
-  );
-}
 
 const nextAuth = NextAuth({
   session: { strategy: "jwt" },
   secret: process.env.NEXTAUTH_SECRET,
   // Required for non-Vercel deployments / local dev — without this NextAuth
-  // rejects POSTs from the local Host header as untrusted, producing
-  // MissingCSRF on every signIn() server action.
+  // rejects POSTs from the local Host header as untrusted.
   trustHost: true,
   providers,
   callbacks: {
-    async signIn({ user }) {
-      // Hard-block sign-in if email is not on the allowlist. NextAuth has
-      // already verified the address (OAuth flow or magic-link), so by the
-      // time we reach this callback the email is trusted.
-      return isAdminEmail(user?.email);
-    },
     async jwt({ token, user }) {
-      // On first sign-in (user present), set sub to the email and stamp
-      // role from the allowlist. After that the JWT is self-contained.
-      // We refresh role on every decode so demotions take effect on next
-      // request rather than waiting for the JWT to expire.
-      if (user?.email) {
-        token.sub = user.email.toLowerCase();
-        token.email = user.email.toLowerCase();
-        token.role = isAdminEmail(user.email) ? "ADMIN" : "USER";
-      } else if (typeof token.email === "string") {
-        token.role = isAdminEmail(token.email) ? "ADMIN" : "USER";
+      // First sign-in: stamp the api-returned identity into the JWT.
+      if (user) {
+        const u = user as { id?: string; email?: string; role?: "ADMIN" | "USER" };
+        if (u.id) token.sub = u.id;
+        if (u.email) token.email = u.email.toLowerCase();
+        token.role = u.role ?? "ADMIN";
       }
       return token;
     },

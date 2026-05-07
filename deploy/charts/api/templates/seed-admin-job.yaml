@@ -1,13 +1,16 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "api.fullname" . }}-migrate-{{ .Values.image.tag | replace "." "-" | trunc 20 }}
+  name: {{ include "api.fullname" . }}-seed-admin-{{ .Values.image.tag | replace "." "-" | trunc 20 }}
   labels:
     {{- include "api.labels" . | nindent 4 }}
   annotations:
+    # Run after migrations (PreSync wave 0) but before the Deployment rolls.
+    # Idempotent — exits cleanly if INITIAL_ADMIN_* are unset OR if an admin
+    # with that email already has a credential.
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 2
   ttlSecondsAfterFinished: 600
@@ -15,7 +18,7 @@ spec:
     metadata:
       labels:
         {{- include "api.selectorLabels" . | nindent 8 }}
-        job: migrate
+        job: seed-admin
     spec:
       restartPolicy: Never
       {{- if .Values.imagePullSecret }}
@@ -23,13 +26,13 @@ spec:
         - name: {{ .Values.imagePullSecret }}
       {{- end }}
       containers:
-        - name: migrate
+        - name: seed-admin
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - /bin/sh
             - -lc
-            - "node_modules/.bin/prisma migrate deploy"
+            - "node dist/seed-admin.js"
           env:
             - name: PGUSER
               valueFrom:
@@ -43,6 +46,9 @@ spec:
                   key: password
             - name: DATABASE_URL
               value: "postgresql://$(PGUSER):$(PGPASSWORD)@{{ .Values.postgres.service }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretRefs.appSecret }}
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits:   { memory: 256Mi }

@@ -12,6 +12,7 @@ import { roomRoutes } from "./routes/rooms.js";
 import { adminPayoutRoutes } from "./routes/payouts.admin.js";
 import { adminStatsRoutes } from "./routes/admin-stats.admin.js";
 import { adminUserRoutes } from "./routes/users.admin.js";
+import { adminAuthRoutes } from "./routes/admin-auth.admin.js";
 import { startScheduler, stopScheduler } from "./services/scheduler.js";
 
 async function main() {
@@ -59,6 +60,7 @@ async function main() {
   await app.register(adminPayoutRoutes);
   await app.register(adminStatsRoutes);
   await app.register(adminUserRoutes);
+  await app.register(adminAuthRoutes);
 
   const schedulerHandle = startScheduler(app.log);
 

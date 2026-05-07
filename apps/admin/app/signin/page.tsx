@@ -1,11 +1,21 @@
 import { signIn } from "@/lib/auth";
 import { AdminIcon } from "@/components/AdminIcon";
 
+const ERROR_LABELS: Record<string, string> = {
+  CredentialsSignin: "Invalid email or password.",
+  Configuration: "Sign-in is misconfigured. Try again or contact an admin.",
+  AccessDenied: "Your account does not have admin access.",
+};
+
 export default function SignInPage({
   searchParams,
 }: {
   searchParams: { error?: string; email?: string };
 }) {
+  const errorMessage = searchParams.error
+    ? ERROR_LABELS[searchParams.error] ?? "Sign-in failed. Please try again."
+    : null;
+
   return (
     <main
       className="flex min-h-screen"
@@ -52,7 +62,7 @@ export default function SignInPage({
             Sign in with your operations account.
           </p>
 
-          {searchParams.error === "forbidden" && (
+          {errorMessage && (
             <div
               className="mt-4 rounded-md px-3 py-2 text-sm"
               style={{
@@ -60,60 +70,18 @@ export default function SignInPage({
                 color: "var(--a-wrong)",
               }}
             >
-              Your account does not have admin access.
+              {errorMessage}
             </div>
           )}
 
           <form
             className="mt-6 flex flex-col gap-3"
-            action={async () => {
-              "use server";
-              await signIn("google", { redirectTo: "/" });
-            }}
-          >
-            <button
-              type="submit"
-              className="adm-btn"
-              style={{ height: 42, justifyContent: "center", fontSize: 14 }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24">
-                <path
-                  d="M22 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.6c-.2 1.3-1 2.4-2 3.1v2.6h3.4c2-1.8 3.1-4.5 3.1-7.5z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 22c2.7 0 5-.9 6.7-2.4l-3.4-2.6c-.9.6-2.1 1-3.3 1-2.6 0-4.7-1.7-5.5-4H3v2.5C4.7 19.7 8.1 22 12 22z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M6.5 14c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V7.5H3C2.4 8.9 2 10.4 2 12s.4 3.1 1 4.5L6.5 14z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 6.4c1.5 0 2.8.5 3.8 1.5l2.9-2.9C16.9 3.4 14.7 2.5 12 2.5 8.1 2.5 4.7 4.7 3 7.5L6.5 10c.8-2.3 2.9-3.6 5.5-3.6z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Continue with Google
-            </button>
-          </form>
-
-          <div
-            className="my-5 flex items-center gap-3 text-xs font-bold tracking-[0.1em]"
-            style={{ color: "var(--a-ink-faint)" }}
-          >
-            <span className="h-px flex-1" style={{ background: "var(--a-line)" }} />
-            <span>OR</span>
-            <span className="h-px flex-1" style={{ background: "var(--a-line)" }} />
-          </div>
-
-          <form
-            className="flex flex-col gap-3"
             action={async (formData) => {
               "use server";
               const email = String(formData.get("email") ?? "").trim();
-              if (!email) return;
-              await signIn("nodemailer", { email, redirectTo: "/" });
+              const password = String(formData.get("password") ?? "");
+              if (!email || !password) return;
+              await signIn("credentials", { email, password, redirectTo: "/" });
             }}
           >
             <div className="adm-field">
@@ -122,8 +90,20 @@ export default function SignInPage({
                 type="email"
                 name="email"
                 required
+                autoComplete="email"
                 defaultValue={searchParams.email}
                 placeholder="you@example.com"
+                className="adm-input"
+              />
+            </div>
+            <div className="adm-field">
+              <label>Password</label>
+              <input
+                type="password"
+                name="password"
+                required
+                autoComplete="current-password"
+                placeholder="••••••••"
                 className="adm-input"
               />
             </div>
@@ -132,10 +112,18 @@ export default function SignInPage({
               className="adm-btn adm-btn--primary"
               style={{ height: 42, justifyContent: "center", fontSize: 14 }}
             >
-              Email me a sign-in link
+              Sign in
               <AdminIcon name="arrow-right" size={14} color="white" />
             </button>
           </form>
+
+          <p
+            className="mt-6 text-xs"
+            style={{ color: "var(--a-ink-faint)" }}
+          >
+            Forgot your password? Ask another admin to reset it from the
+            Admins page, or run the seed script with new credentials.
+          </p>
         </div>
       </div>
 

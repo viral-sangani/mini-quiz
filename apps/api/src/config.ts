@@ -10,15 +10,12 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1),
   NEXTAUTH_SECRET: z.string().min(16),
-  ADMIN_EMAILS: z
-    .string()
-    .default("")
-    .transform((s) =>
-      s
-        .split(",")
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean),
-    ),
+  // Used only by apps/api/src/seed-admin.ts. If set on api boot, the seed
+  // script will idempotently create an admin with this email + password
+  // when it doesn't already exist. After the initial bootstrap these can be
+  // removed from the Sealed Secret.
+  INITIAL_ADMIN_EMAIL: z.string().optional(),
+  INITIAL_ADMIN_PASSWORD: z.string().optional(),
   TREASURY_PRIVATE_KEY: z
     .string()
     .optional()

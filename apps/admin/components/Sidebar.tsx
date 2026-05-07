@@ -86,6 +86,10 @@ export function Sidebar({
       matchPrefix: "/payouts",
       count: failedCount > 0 ? failedCount : undefined,
     },
+    { id: "admins", href: "/admins", icon: "people", label: "Admins" },
+  ];
+  const account: NavItem[] = [
+    { id: "settings", href: "/settings", icon: "cog", label: "Settings" },
   ];
 
   // Resolve a single active item per render. Specificity order:
@@ -93,7 +97,7 @@ export function Sidebar({
   //   2. matchPrefix on the longest (most specific) prefix
   //   3. exact href
   // Items checked: only one wins; the rest render inactive.
-  const allItems = [...operate, ...moneyAndPeople];
+  const allItems = [...operate, ...moneyAndPeople, ...account];
   const exactWinner = allItems.find((it) =>
     it.matchExact?.some((re) => re.test(pathname)),
   );
@@ -166,6 +170,10 @@ export function Sidebar({
         ))}
         <SectionHeader>People &amp; Money</SectionHeader>
         {moneyAndPeople.map((it) => (
+          <Item key={it.label} item={it} />
+        ))}
+        <SectionHeader>Account</SectionHeader>
+        {account.map((it) => (
           <Item key={it.label} item={it} />
         ))}
       </div>
