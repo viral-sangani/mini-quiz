@@ -140,6 +140,7 @@ export function AIQuestionGeneratorDialog({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        padding: 16,
         zIndex: 50,
       }}
       onClick={onCancel}
@@ -147,12 +148,28 @@ export function AIQuestionGeneratorDialog({
       <div
         className="adm-card"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 540, maxWidth: "calc(100vw - 32px)" }}
+        style={{
+          width: 540,
+          maxWidth: "calc(100vw - 32px)",
+          maxHeight: "calc(100dvh - 32px)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
       >
-        <div className="adm-card-h">
+        <div className="adm-card-h" style={{ flex: "0 0 auto" }}>
           <h3>Generate questions with AI</h3>
         </div>
-        <div style={{ padding: 18, display: "grid", gap: 12 }}>
+        <div
+          style={{
+            padding: 18,
+            display: "grid",
+            gap: 12,
+            overflowY: "auto",
+            overscrollBehavior: "contain",
+            minHeight: 0,
+          }}
+        >
           <div className="adm-field">
             <label>Topic</label>
             <div style={{ display: "flex", gap: 8 }}>
@@ -339,6 +356,8 @@ export function AIQuestionGeneratorDialog({
             display: "flex",
             justifyContent: "flex-end",
             gap: 8,
+            flex: "0 0 auto",
+            background: "white",
           }}
         >
           <button
