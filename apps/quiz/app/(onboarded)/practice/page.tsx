@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Loader } from "@/components/Loader";
 import { Mango } from "@/components/Mango";
 import { MQCard } from "@/components/MQCard";
 import { Pill } from "@/components/Pill";
 import { api } from "@/lib/api-client";
+import { usePlayerCache } from "@/lib/player-cache";
 
 type Topic = {
   id: string;
@@ -18,41 +19,23 @@ type Topic = {
 };
 
 export default function PracticeListPage() {
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Practice topics rarely change. 5 min stale window keeps tab-jumps
+  // instant (no flicker, no loader) and refetches in the background.
+  const { data, isLoading, error } = usePlayerCache<{ topics: Topic[] }>(
+    "practice-topics",
+    () => api.get<{ topics: Topic[] }>("/practice/topics"),
+    { staleAfterMs: 5 * 60_000 },
+  );
 
-  useEffect(() => {
-    let cancel = false;
-    void (async () => {
-      try {
-        const data = await api.get<{ topics: Topic[] }>("/practice/topics");
-        if (!cancel) setTopics(data.topics);
-      } catch (e) {
-        if (!cancel)
-          setError(e instanceof Error ? e.message : "Could not load topics");
-      } finally {
-        if (!cancel) setLoading(false);
-      }
-    })();
-    return () => {
-      cancel = true;
-    };
-  }, []);
-
-  if (loading)
-    return (
-      <div className="mq-page" style={{ padding: 16 }}>
-        Loading practice…
-      </div>
-    );
+  if (isLoading) return <Loader label="Loading practice…" pose="think" />;
   if (error)
     return (
       <div className="mq-page" style={{ padding: 16 }}>
-        <p>{error}</p>
+        <p>{error.message}</p>
       </div>
     );
 
+  const topics = data?.topics ?? [];
   if (topics.length === 0) {
     return (
       <div

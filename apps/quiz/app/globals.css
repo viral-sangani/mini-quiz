@@ -151,11 +151,22 @@ input, select, textarea { font-size: 16px; }
     transition: width 0.3s ease;
   }
 
+  /* Sticky bottom nav. Pinned to viewport bottom across all (onboarded)
+   * pages so it's always reachable; respects iOS safe-area inset for the
+   * gesture bar. Pages that render under the tab bar must use
+   * `.mq-screen-with-tabbar` (or pad themselves) so the last item isn't
+   * hidden under the floating nav. */
   .mq-tabbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
     display: flex; justify-content: space-around; align-items: center;
-    padding: 10px 16px 14px;
+    padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
     background: var(--card);
     border-top: 2px solid var(--line);
+    box-shadow: 0 -4px 18px rgba(31, 42, 68, 0.05);
   }
   .mq-tab {
     flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -164,6 +175,87 @@ input, select, textarea { font-size: 16px; }
     color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase;
   }
   .mq-tab[aria-current="page"] { color: var(--primary); }
+
+  /* Pages rendered under the sticky tab bar reserve space at the bottom
+   * so scroll content doesn't hide behind it. ~78px ≈ tabbar height +
+   * inset; the inset is already inside .mq-tabbar's padding so we don't
+   * double-count it. */
+  .mq-screen-with-tabbar {
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+
+  /* Stat tile — used on profile. Icon chip top-left, value front-and-
+   * centre, label below. Background tint + accent stripe both driven by
+   * the --tile-accent CSS variable set inline by the component. */
+  .mq-stat-tile {
+    position: relative;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: var(--r-card);
+    box-shadow: var(--shadow-card);
+    padding: 14px 14px 12px;
+    min-height: 110px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+  .mq-stat-tile::before {
+    /* Subtle background wash so each tile feels distinct without losing
+     * card identity. */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--tile-accent, var(--primary));
+    opacity: 0.06;
+    pointer-events: none;
+  }
+  .mq-stat-tile::after {
+    /* Accent stripe along the bottom edge, color-coded to the metric. */
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4px;
+    background: var(--tile-accent, var(--primary));
+    opacity: 0.85;
+  }
+  .mq-stat-tile__chip {
+    position: relative;
+    z-index: 1;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--tile-accent, var(--primary));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: inset 0 -2px 0 0 rgba(0, 0, 0, 0.15);
+  }
+  .mq-stat-tile__value {
+    position: relative;
+    z-index: 1;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 26px;
+    line-height: 1.05;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin-top: 6px;
+  }
+  .mq-stat-tile__label {
+    position: relative;
+    z-index: 1;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-top: 4px;
+  }
 }
 
 /* ────────── Animations ────────── */

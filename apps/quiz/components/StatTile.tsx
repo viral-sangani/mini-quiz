@@ -1,6 +1,8 @@
 import { Icon, type IconName } from "./Icon";
-import { MQCard } from "./MQCard";
 
+// Profile stats. Icon chip top-left + big value + small label below. The
+// `color` prop drives both the chip background and the bottom accent stripe
+// via the `--tile-accent` CSS variable consumed by `.mq-stat-tile` rules.
 export function StatTile({
   label,
   value,
@@ -13,30 +15,15 @@ export function StatTile({
   color: string;
 }) {
   return (
-    <MQCard style={{ padding: 12, textAlign: "center" }}>
-      <Icon name={icon} size={20} color={color} />
-      <div
-        className="mq-num"
-        style={{
-          fontFamily: "var(--font-display)",
-          fontWeight: 900,
-          fontSize: 20,
-          marginTop: 4,
-        }}
-      >
-        {value}
-      </div>
-      <div
-        style={{
-          fontSize: 9,
-          fontFamily: "var(--font-display)",
-          fontWeight: 800,
-          color: "var(--ink-soft)",
-          letterSpacing: 0.1,
-        }}
-      >
-        {label}
-      </div>
-    </MQCard>
+    <div
+      className="mq-stat-tile"
+      style={{ ["--tile-accent" as string]: color }}
+    >
+      <span className="mq-stat-tile__chip" aria-hidden="true">
+        <Icon name={icon} size={18} color="white" />
+      </span>
+      <div className="mq-stat-tile__value">{value}</div>
+      <div className="mq-stat-tile__label">{label}</div>
+    </div>
   );
 }

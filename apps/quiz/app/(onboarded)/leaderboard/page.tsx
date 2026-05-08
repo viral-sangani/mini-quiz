@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   GlobalLeaderboardPeriod,
   GlobalLeaderboardRow,
@@ -11,6 +11,7 @@ import { Mango } from "@/components/Mango";
 import { MQCard } from "@/components/MQCard";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { api } from "@/lib/api-client";
+import { usePlayerCache } from "@/lib/player-cache";
 import { useProfile } from "@/lib/profile-context";
 
 type Resp = { rows: GlobalLeaderboardRow[]; viewer: GlobalLeaderboardRow | null };
@@ -23,30 +24,19 @@ export default function LeaderboardPage() {
       : null;
 
   const [period, setPeriod] = useState<GlobalLeaderboardPeriod>("today");
-  const [data, setData] = useState<Resp | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    setError(null);
-    async function load() {
-      try {
-        const qs = new URLSearchParams({ period });
-        if (viewerUserId) qs.set("viewerUserId", viewerUserId);
-        const res = await api.get<Resp>(`/leaderboard?${qs.toString()}`);
-        if (!cancelled) setData(res);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Could not load leaderboard");
-        }
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [period, viewerUserId]);
+  // Cached per (period + viewer) — switching tabs returns instantly. Stale
+  // window 30s; the leaderboard ticks fast so we revalidate aggressively.
+  const cacheKey = `leaderboard:${period}:${viewerUserId ?? "anon"}`;
+  const { data, error } = usePlayerCache<Resp>(
+    cacheKey,
+    () => {
+      const qs = new URLSearchParams({ period });
+      if (viewerUserId) qs.set("viewerUserId", viewerUserId);
+      return api.get<Resp>(`/leaderboard?${qs.toString()}`);
+    },
+    { staleAfterMs: 30_000 },
+  );
 
   const top3 = useMemo(() => (data?.rows ?? []).slice(0, 3), [data]);
   const list = useMemo(() => data?.rows ?? [], [data]);
@@ -139,7 +129,7 @@ export default function LeaderboardPage() {
         )}
         {error && (
           <div style={{ color: "var(--wrong-shade)", fontSize: 13, fontWeight: 800, textAlign: "center", padding: 8 }}>
-            {error}
+            {error.message}
           </div>
         )}
 

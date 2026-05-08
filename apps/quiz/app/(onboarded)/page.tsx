@@ -11,35 +11,32 @@ import { MQCard } from "@/components/MQCard";
 import { Pill } from "@/components/Pill";
 import { StatChip } from "@/components/StatChip";
 import { api } from "@/lib/api-client";
+import { usePlayerCache } from "@/lib/player-cache";
 import { useProfile } from "@/lib/profile-context";
 import { formatLocal } from "@/lib/time";
 
 export default function HomePage() {
   const { state } = useProfile();
-  const [quizzes, setQuizzes] = useState<PublicQuiz[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  // Upcoming quizzes — backed by the cache so tab-switches return instantly.
+  // We still want fast updates while on the home tab, so a 10s `refetch`
+  // interval lives alongside the 1s clock tick.
+  const { data, refetch } = usePlayerCache<{ quizzes: PublicQuiz[] }>(
+    "upcoming-quizzes",
+    () => api.get<{ quizzes: PublicQuiz[] }>("/quizzes/upcoming"),
+    { staleAfterMs: 10_000 },
+  );
+  const quizzes = data?.quizzes ?? null;
+
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const data = await api.get<{ quizzes: PublicQuiz[] }>(
-          "/quizzes/upcoming",
-        );
-        if (!cancelled) setQuizzes(data.quizzes);
-      } catch {
-        if (!cancelled) setQuizzes([]);
-      }
-    }
-    void load();
-    const fetchId = setInterval(load, 10_000);
+    const fetchId = setInterval(() => void refetch(), 10_000);
     const tickId = setInterval(() => setNow(Date.now()), 1000);
     return () => {
-      cancelled = true;
       clearInterval(fetchId);
       clearInterval(tickId);
     };
-  }, []);
+  }, [refetch]);
 
   // Pick the most actionable quiz to feature in the "Live now" hero:
   // Live > lobby-open > starting > pre-lobby (next today). Falls back to first
@@ -94,8 +91,28 @@ export default function HomePage() {
         {featured ? (
           <FeaturedHero quiz={featured} now={now} />
         ) : quizzes === null ? (
-          <div className="mq-card" style={{ height: 150, padding: 16 }}>
-            <div className="mq-body">Loading…</div>
+          // First-load placeholder. Tab caching means this only shows on
+          // genuine cold open, never on tab-switch back to home.
+          <div
+            className="mq-card"
+            style={{
+              height: 150,
+              padding: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+            }}
+          >
+            <span className="mq-bob" style={{ display: "inline-block" }}>
+              <Mango pose="think" size={56} />
+            </span>
+            <div
+              className="mq-body"
+              style={{ fontWeight: 800, color: "var(--ink-soft)" }}
+            >
+              Looking for live games…
+            </div>
           </div>
         ) : (
           <NoQuizzesCard />

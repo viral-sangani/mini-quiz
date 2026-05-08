@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { LeaderboardRow } from "@mini-quiz/shared";
 import { Avatar } from "@/components/Avatar";
 import { Icon } from "@/components/Icon";
+import { Loader } from "@/components/Loader";
 import { Mango } from "@/components/Mango";
 import { MQButton } from "@/components/MQButton";
 import { MQCard } from "@/components/MQCard";
 import { Pill } from "@/components/Pill";
 import { api } from "@/lib/api-client";
+import { usePlayerCache } from "@/lib/player-cache";
 import { useProfile } from "@/lib/profile-context";
 
 type DailyToday =
@@ -49,51 +51,44 @@ export default function DailyHubPage() {
     state.status === "ready" || state.status === "needs-onboarding"
       ? state.walletAddress
       : null;
-  const [today, setToday] = useState<DailyToday | null>(null);
-  const [board, setBoard] = useState<LeaderboardResponse | null>(null);
-  const [yesterday, setYesterday] = useState<LeaderboardResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancel = false;
-    void (async () => {
-      setLoading(true);
-      try {
-        const t = await api.get<DailyToday>(
+  // Today's daily — keyed by wallet so swapping wallets invalidates cleanly.
+  // 60s stale: covers the in-game progress refresh after a play, but cheap
+  // enough that we won't hammer the API while the user toggles between tabs.
+  const todayKey = `daily-today:${wallet ?? "anon"}`;
+  const { data: today, isLoading: todayLoading, error: todayErr } =
+    usePlayerCache<DailyToday>(
+      todayKey,
+      () =>
+        api.get<DailyToday>(
           `/daily/today${wallet ? `?walletAddress=${wallet}` : ""}`,
-        );
-        if (cancel) return;
-        setToday(t);
-        if (t.kind === "active") {
-          try {
-            const lb = await api.get<LeaderboardResponse>("/daily/leaderboard");
-            if (!cancel) setBoard(lb);
-          } catch {
-            // ok if no plays yet
-          }
-        }
-        const yDate = new Date();
-        yDate.setUTCDate(yDate.getUTCDate() - 1);
-        try {
-          const ylb = await api.get<LeaderboardResponse>(
-            `/daily/leaderboard?date=${utcDateStr(yDate)}`,
-          );
-          if (!cancel) setYesterday(ylb);
-        } catch {
-          // no daily yesterday
-        }
-      } catch (e) {
-        if (!cancel)
-          setError(e instanceof Error ? e.message : "Could not load daily");
-      } finally {
-        if (!cancel) setLoading(false);
-      }
-    })();
-    return () => {
-      cancel = true;
-    };
-  }, [wallet]);
+        ),
+      { staleAfterMs: 60_000 },
+    );
+
+  // Today's leaderboard — only fetched when the daily is active. Disabled
+  // case still returns cached data if any.
+  const { data: board } = usePlayerCache<LeaderboardResponse>(
+    "daily-leaderboard:today",
+    () => api.get<LeaderboardResponse>("/daily/leaderboard"),
+    { staleAfterMs: 30_000, enabled: today?.kind === "active" },
+  );
+
+  // Yesterday's snapshot — basically immutable once frozen by the
+  // scheduler, so a long stale window is safe.
+  const yesterdayDateStr = useMemo(() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - 1);
+    return utcDateStr(d);
+  }, []);
+  const { data: yesterday } = usePlayerCache<LeaderboardResponse>(
+    `daily-leaderboard:${yesterdayDateStr}`,
+    () =>
+      api.get<LeaderboardResponse>(
+        `/daily/leaderboard?date=${yesterdayDateStr}`,
+      ),
+    { staleAfterMs: 60 * 60_000 },
+  );
 
   const myRank = useMemo(() => {
     if (!board || state.status !== "ready") return null;
@@ -102,18 +97,14 @@ export default function DailyHubPage() {
     return idx >= 0 ? idx + 1 : null;
   }, [board, state]);
 
-  if (loading) {
-    return (
-      <div className="mq-page" style={{ padding: 16 }}>
-        Loading daily…
-      </div>
-    );
+  if (todayLoading) {
+    return <Loader label="Loading today's daily…" pose="think" />;
   }
 
-  if (error) {
+  if (todayErr) {
     return (
       <div className="mq-page" style={{ padding: 16 }}>
-        <p>{error}</p>
+        <p>{todayErr.message}</p>
       </div>
     );
   }
@@ -252,10 +243,13 @@ function YesterdayBlock({ board }: { board: LeaderboardResponse }) {
 
 function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
   return (
-    <div style={{ display: "grid", gap: 6 }}>
+    <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
       {rows.map((r, i) => (
         <div
           key={r.userId}
+          // `min-width: 0` chained from parent → row → name span lets the
+          // text-overflow ellipsis fire instead of pushing points off-screen
+          // on narrow phones.
           style={{
             display: "flex",
             alignItems: "center",
@@ -263,16 +257,45 @@ function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
             padding: 8,
             borderRadius: 10,
             background: "var(--surface-2, rgba(0,0,0,0.03))",
+            minWidth: 0,
           }}
         >
-          <span style={{ width: 24, fontWeight: 800 }}>#{i + 1}</span>
+          <span
+            style={{
+              width: 24,
+              flex: "0 0 24px",
+              fontWeight: 800,
+              textAlign: "right",
+            }}
+          >
+            #{i + 1}
+          </span>
           <Avatar
             emoji={r.avatarEmoji ?? "🐒"}
             color={r.avatarColor ?? "berry"}
             size={28}
           />
-          <span style={{ flex: 1, fontWeight: 600 }}>{r.displayName}</span>
-          <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {r.displayName}
+          </span>
+          <span
+            style={{
+              flex: "0 0 auto",
+              minWidth: 56,
+              textAlign: "right",
+              fontVariantNumeric: "tabular-nums",
+              fontWeight: 700,
+            }}
+          >
             {r.points}
           </span>
         </div>

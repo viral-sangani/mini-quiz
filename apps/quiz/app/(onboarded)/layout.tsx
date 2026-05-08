@@ -35,10 +35,10 @@ export default function OnboardedLayout({ children }: { children: ReactNode }) {
 
   return (
     <main
-      className="mq-screen"
-      style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}
+      className="mq-screen mq-screen-with-tabbar"
+      style={{ minHeight: "100dvh" }}
     >
-      <div style={{ flex: 1, overflow: "auto" }}>{children}</div>
+      {children}
       <TabBar />
     </main>
   );

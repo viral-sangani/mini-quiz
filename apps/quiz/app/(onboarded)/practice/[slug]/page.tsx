@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import type { Choice } from "@mini-quiz/shared";
 import { fireConfetti } from "@/components/ConfettiBurst";
+import { Loader } from "@/components/Loader";
 import { Mango } from "@/components/Mango";
 import { MQButton } from "@/components/MQButton";
 import { MQCard } from "@/components/MQCard";
@@ -111,11 +112,7 @@ export default function PracticePlayPage() {
   };
 
   if (state.status !== "ready")
-    return (
-      <div className="mq-page" style={{ padding: 16 }}>
-        Loading…
-      </div>
-    );
+    return <Loader label="Getting your topic ready…" pose="think" />;
   if (error)
     return (
       <div className="mq-page" style={{ padding: 16 }}>
@@ -178,12 +175,7 @@ export default function PracticePlayPage() {
       </div>
     );
   }
-  if (!start)
-    return (
-      <div className="mq-page" style={{ padding: 16 }}>
-        Loading topic…
-      </div>
-    );
+  if (!start) return <Loader label="Loading topic…" pose="think" />;
   const q = start.questions[idx];
   if (!q)
     return (

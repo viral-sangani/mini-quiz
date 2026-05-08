@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { BADGE_CATALOG, type BadgeId } from "@mini-quiz/shared";
+import { useMemo, useState } from "react";
+import { BADGE_CATALOG, type BadgeDef, type BadgeId } from "@mini-quiz/shared";
 import { Avatar, avatarColorVar } from "@/components/Avatar";
+import { BadgeDetailSheet } from "@/components/BadgeDetailSheet";
 import { Icon, type IconName } from "@/components/Icon";
-import { Mango } from "@/components/Mango";
+import { Loader } from "@/components/Loader";
 import { MQCard } from "@/components/MQCard";
 import { ProgressBar } from "@/components/ProgressBar";
 import { StatTile } from "@/components/StatTile";
@@ -13,16 +14,11 @@ import { useProfile } from "@/lib/profile-context";
 
 export default function ProfilePage() {
   const { state } = useProfile();
+  // Selected badge for the detail sheet. Null means closed.
+  const [openBadge, setOpenBadge] = useState<BadgeDef | null>(null);
 
   if (state.status !== "ready") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "48px 16px" }}>
-        <Mango pose="think" size={120} />
-        <p className="mq-body" style={{ fontSize: 14, marginTop: 12 }}>
-          Loading profile…
-        </p>
-      </div>
-    );
+    return <Loader label="Loading your profile…" pose="think" />;
   }
 
   const { profile } = state;
@@ -30,6 +26,12 @@ export default function ProfilePage() {
     () => new Set(profile.badges.map((b) => b.id as BadgeId)),
     [profile.badges],
   );
+  // Map of badgeId → awardedAt for quick lookup when the sheet opens.
+  const earnedDates = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const b of profile.badges) m.set(b.id, b.awardedAt);
+    return m;
+  }, [profile.badges]);
 
   const xpPct =
     profile.xpToNextLevel > 0
@@ -159,7 +161,22 @@ export default function ProfilePage() {
         {BADGE_CATALOG.map((b) => {
           const earned = earnedIds.has(b.id);
           return (
-            <div key={b.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => setOpenBadge(b)}
+              aria-label={`View ${b.label} badge details`}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 4,
+                background: "transparent",
+                border: 0,
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
               <div
                 style={{
                   width: 56,
@@ -172,7 +189,6 @@ export default function ProfilePage() {
                   border: "2px solid var(--line)",
                   boxShadow: "inset 0 -3px 0 0 rgba(0,0,0,0.12)",
                 }}
-                title={b.description}
               >
                 <Icon
                   name={(earned ? b.icon : "lock") as IconName}
@@ -191,10 +207,17 @@ export default function ProfilePage() {
               >
                 {earned ? b.label : "Locked"}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
+
+      <BadgeDetailSheet
+        open={openBadge !== null}
+        badge={openBadge}
+        earnedAt={openBadge ? earnedDates.get(openBadge.id) ?? null : null}
+        onClose={() => setOpenBadge(null)}
+      />
     </div>
   );
 }

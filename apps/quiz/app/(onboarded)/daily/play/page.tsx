@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Choice, PublicQuestion } from "@mini-quiz/shared";
 import { fireConfetti } from "@/components/ConfettiBurst";
+import { Loader } from "@/components/Loader";
 import { Mango } from "@/components/Mango";
 import { MQButton } from "@/components/MQButton";
 import { MQCard } from "@/components/MQCard";
@@ -179,11 +180,7 @@ export default function DailyPlayPage() {
   };
 
   if (state.status !== "ready") {
-    return (
-      <div className="mq-page" style={{ padding: 16 }}>
-        Loading…
-      </div>
-    );
+    return <Loader label="Getting you in…" pose="think" />;
   }
 
   if (error) {
@@ -255,11 +252,7 @@ export default function DailyPlayPage() {
   }
 
   if (!start) {
-    return (
-      <div className="mq-page" style={{ padding: 16 }}>
-        Starting…
-      </div>
-    );
+    return <Loader label="Starting today's daily…" pose="cheer" />;
   }
 
   const q = start.questions[idx];

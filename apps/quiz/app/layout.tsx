@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Nunito } from "next/font/google";
+import { PlayerCacheProvider } from "@/lib/player-cache";
 import { ProfileProvider } from "@/lib/profile-context";
 
 const nunito = Nunito({
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={nunito.variable}>
       <body className="font-display antialiased">
-        <ProfileProvider>{children}</ProfileProvider>
+        <ProfileProvider>
+          <PlayerCacheProvider>{children}</PlayerCacheProvider>
+        </ProfileProvider>
       </body>
     </html>
   );
