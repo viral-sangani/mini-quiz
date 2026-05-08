@@ -78,6 +78,7 @@ export type CreateQuizInput = {
   prizeAmounts: string[];
   difficulty?: Difficulty;
   coverColor?: string;
+  payoutToken?: "CELO" | "USDC" | "USDT";
   questions: {
     prompt: string;
     choices: { id: string; label: string }[];
@@ -168,6 +169,7 @@ export async function createQuiz(
       prizeAmounts: input.prizeAmounts,
       difficulty: input.difficulty,
       coverColor: input.coverColor,
+      payoutToken: input.payoutToken,
       createdById: adminUserId,
       questions: {
         create: input.questions.map((q, idx) => ({
@@ -193,6 +195,7 @@ export type UpdateQuizInput = Partial<
     | "prizeAmounts"
     | "difficulty"
     | "coverColor"
+    | "payoutToken"
   >
 > & {
   questions?: CreateQuizInput["questions"];
@@ -253,6 +256,7 @@ export async function updateQuiz(
         prizeAmounts: input.prizeAmounts,
         difficulty: input.difficulty,
         coverColor: input.coverColor,
+        payoutToken: input.payoutToken,
         status: nextStatus,
       },
       include: { _count: { select: { questions: true, players: true } } },

@@ -15,6 +15,7 @@ import {
 import { getLiveState } from "../services/room.service.js";
 import { enqueueAutoPayouts } from "../services/payout.service.js";
 import { evaluateBadgesAfterQuiz } from "../services/badge.service.js";
+import { getTreasurySummary } from "../services/treasury.service.js";
 
 const choiceSchema = z.object({ id: z.string().min(1), label: z.string().min(1) });
 const questionSchema = z.object({
@@ -35,10 +36,68 @@ const createSchema = z.object({
   prizeAmounts: z.array(z.string()).min(1),
   difficulty: z.enum(["EASY", "MEDIUM", "HARD"]).optional(),
   coverColor: z.enum(COVER_COLORS).optional(),
+  payoutToken: z.enum(["CELO", "USDC", "USDT"]).optional(),
   questions: z.array(questionSchema).min(1).max(50),
 });
 
 const updateSchema = createSchema.partial();
+
+// Sum the prize-amount strings as Number — same scale-tolerance as the
+// rest of the treasury math.
+function sumPrize(amounts: string[]): number {
+  let total = 0;
+  for (const s of amounts) {
+    const n = Number(s);
+    if (Number.isFinite(n)) total += n;
+  }
+  return total;
+}
+
+// Refuse to create / edit a quiz that overcommits treasury balance.
+// Only enforced when the quiz is actually scheduled (not DRAFT) — drafts
+// don't lock funds yet. Returns an error envelope on failure or null on
+// success.
+async function assertSufficientTreasury(args: {
+  payoutToken: "CELO" | "USDC" | "USDT";
+  prizeAmounts: string[];
+  scheduledStart: Date | null;
+  excludeQuizId?: string;
+}): Promise<
+  | null
+  | {
+      code: "INSUFFICIENT_TREASURY";
+      message: string;
+      required: string;
+      available: string;
+      token: "CELO" | "USDC" | "USDT";
+      treasuryAddress: string;
+    }
+> {
+  // Drafts don't lock funds — only enforce when there's a real schedule.
+  if (!args.scheduledStart) return null;
+  const required = sumPrize(args.prizeAmounts);
+  if (required <= 0) return null;
+  const summary = await getTreasurySummary({ refresh: true });
+  // The treasury summary's "locked" already includes other scheduled
+  // quizzes' prize pools and in-flight payouts. For an EDIT of an
+  // already-scheduled quiz we'd be double-counting that quiz's own
+  // amounts. We don't try to subtract them out — instead, callers pass
+  // excludeQuizId only if they really need to. In the common create
+  // flow it's undefined, which is correct.
+  const available = Number(summary.available[args.payoutToken]);
+  if (!Number.isFinite(available) || available < required) {
+    return {
+      code: "INSUFFICIENT_TREASURY",
+      message: `Need ${required} ${args.payoutToken}, treasury has ${available} available.`,
+      required: String(required),
+      available: String(available),
+      token: args.payoutToken,
+      treasuryAddress: summary.address,
+    };
+  }
+  void args.excludeQuizId; // currently unused; placeholder for future edit-flow refinement
+  return null;
+}
 
 export async function adminQuizRoutes(app: FastifyInstance) {
   app.post("/admin/quizzes", async (req, reply) => {
@@ -48,17 +107,28 @@ export async function adminQuizRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
+    const payoutToken = parsed.data.payoutToken ?? "USDT";
+    const scheduledStart = parsed.data.scheduledStart
+      ? new Date(parsed.data.scheduledStart)
+      : null;
+    const insufficient = await assertSufficientTreasury({
+      payoutToken,
+      prizeAmounts: parsed.data.prizeAmounts,
+      scheduledStart,
+    });
+    if (insufficient) {
+      return reply.code(400).send(insufficient);
+    }
     try {
       const quiz = await createQuiz(admin.userId, {
         title: parsed.data.title,
         description: parsed.data.description ?? null,
-        scheduledStart: parsed.data.scheduledStart
-          ? new Date(parsed.data.scheduledStart)
-          : null,
+        scheduledStart,
         questionTimeMs: parsed.data.questionTimeMs,
         prizeAmounts: parsed.data.prizeAmounts,
         difficulty: parsed.data.difficulty,
         coverColor: parsed.data.coverColor,
+        payoutToken,
         questions: parsed.data.questions,
       });
       return { quiz };

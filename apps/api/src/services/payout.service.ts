@@ -10,9 +10,8 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import {
-  PRIZE_FEE_CURRENCY_ADDRESS,
-  PRIZE_TOKEN_ADDRESS,
-  PRIZE_TOKEN_DECIMALS,
+  getPayoutToken,
+  getPayoutTokenByAddress,
   type PublicPayout,
 } from "@mini-quiz/shared";
 import { config } from "../config.js";
@@ -39,12 +38,17 @@ const publicClient = createPublicClient({
   transport: http(config.CELO_RPC_URL),
 });
 
-function treasuryAccount() {
+export function treasuryAccount() {
   if (!config.TREASURY_PRIVATE_KEY) {
     throw new Error("TREASURY_PRIVATE_KEY is not configured");
   }
   return privateKeyToAccount(config.TREASURY_PRIVATE_KEY as Hex);
 }
+
+// Re-export only the constants the treasury service needs; the public
+// client is recreated locally there to avoid tsc serialization of the
+// nested viem inferred type when crossing module boundaries.
+export { ERC20_TRANSFER_ABI };
 
 // Auto-disburse on quiz end. Creates one Payout per prize rank and broadcasts
 // the on-chain transfer in the same call — admin does not approve.
@@ -53,6 +57,11 @@ function treasuryAccount() {
 export async function enqueueAutoPayouts(quizId: string): Promise<void> {
   const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
   if (!quiz) return;
+  // Resolve the prize token from the quiz row — defaults to USDT for older
+  // rows via the schema default. Native CELO stores the empty string in
+  // tokenAddress; lookups round-trip via getPayoutTokenByAddress.
+  const token = getPayoutToken(quiz.payoutToken);
+  const tokenAddressForRow = token.isNative ? "" : (token.address ?? "");
   const rows = await leaderboard(quizId);
   const winnersCount = Math.min(quiz.prizeAmounts.length, rows.length);
   for (let i = 0; i < winnersCount; i++) {
@@ -75,7 +84,7 @@ export async function enqueueAutoPayouts(quizId: string): Promise<void> {
           userId: row.userId,
           rank,
           amount,
-          tokenAddress: PRIZE_TOKEN_ADDRESS,
+          tokenAddress: tokenAddressForRow,
           status: "FAILED",
           failureReason: "Winner has no walletAddress",
         },
@@ -97,7 +106,7 @@ export async function enqueueAutoPayouts(quizId: string): Promise<void> {
         userId: row.userId,
         rank,
         amount,
-        tokenAddress: PRIZE_TOKEN_ADDRESS,
+        tokenAddress: tokenAddressForRow,
         status: "APPROVED",
       },
     });
@@ -131,6 +140,20 @@ async function broadcastPayout(payoutId: string): Promise<void> {
     return;
   }
 
+  // Resolve which token this payout is in. Stored tokenAddress is the
+  // ERC-20 contract for USDC/USDT, or empty/"celo" for native CELO.
+  const token = getPayoutTokenByAddress(payout.tokenAddress);
+  if (!token) {
+    await prisma.payout.update({
+      where: { id: payoutId },
+      data: {
+        status: "FAILED",
+        failureReason: `Unknown payout token address: ${payout.tokenAddress}`,
+      },
+    });
+    return;
+  }
+
   let txHash: Hex;
   try {
     const account = treasuryAccount();
@@ -139,19 +162,26 @@ async function broadcastPayout(payoutId: string): Promise<void> {
       chain: celo,
       transport: http(config.CELO_RPC_URL),
     });
-    const data = encodeFunctionData({
-      abi: ERC20_TRANSFER_ABI,
-      functionName: "transfer",
-      args: [
-        payout.user.walletAddress as Address,
-        parseUnits(payout.amount, PRIZE_TOKEN_DECIMALS),
-      ],
-    });
-    txHash = await walletClient.sendTransaction({
-      to: PRIZE_TOKEN_ADDRESS,
-      data,
-      feeCurrency: PRIZE_FEE_CURRENCY_ADDRESS,
-    } as Parameters<typeof walletClient.sendTransaction>[0]);
+    const winner = payout.user.walletAddress as Address;
+    const value = parseUnits(payout.amount, token.decimals);
+    if (token.isNative) {
+      // Native CELO: gas paid in CELO, no feeCurrency override.
+      txHash = await walletClient.sendTransaction({
+        to: winner,
+        value,
+      } as Parameters<typeof walletClient.sendTransaction>[0]);
+    } else {
+      const data = encodeFunctionData({
+        abi: ERC20_TRANSFER_ABI,
+        functionName: "transfer",
+        args: [winner, value],
+      });
+      txHash = await walletClient.sendTransaction({
+        to: token.address!,
+        data,
+        feeCurrency: token.feeCurrencyAddress,
+      } as Parameters<typeof walletClient.sendTransaction>[0]);
+    }
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     await prisma.payout.update({

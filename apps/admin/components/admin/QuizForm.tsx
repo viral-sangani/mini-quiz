@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   AdminQuestion,
   AdminQuiz,
   CoverColor,
   Difficulty,
+  PayoutTokenSymbol,
 } from "@mini-quiz/shared";
 import { COVER_COLORS } from "@mini-quiz/shared";
 import { isoUtcToLocalDatetimeInput, localDatetimeInputToIsoUtc } from "@/lib/time";
 import { AdminIcon } from "@/components/AdminIcon";
+import { adminApi } from "@/lib/admin-api";
+import { DepositPanel } from "./DepositPanel";
 
 export type QuizFormValue = {
   title: string;
@@ -19,6 +22,7 @@ export type QuizFormValue = {
   prizeAmounts: string[];
   difficulty: Difficulty;
   coverColor: CoverColor;
+  payoutToken: PayoutTokenSymbol;
   questions: {
     prompt: string;
     choices: { id: string; label: string }[];
@@ -34,6 +38,7 @@ export type QuizFormSubmit = {
   prizeAmounts: string[];
   difficulty: Difficulty;
   coverColor: CoverColor;
+  payoutToken: PayoutTokenSymbol;
   questions: QuizFormValue["questions"];
 };
 
@@ -48,6 +53,7 @@ function defaultValue(): QuizFormValue {
     prizeAmounts: ["50", "25", "15", "5", "5", "5", "5", "5", "5", "5"],
     difficulty: "MEDIUM",
     coverColor: "primary",
+    payoutToken: "USDT",
     questions: [blankQuestion()],
   };
 }
@@ -79,6 +85,8 @@ export function fromAdminQuiz(
     prizeAmounts: quiz.prizeAmounts,
     difficulty: quiz.difficulty,
     coverColor: (quiz.coverColor as CoverColor) ?? "primary",
+    payoutToken: ((quiz as unknown as { payoutToken?: PayoutTokenSymbol })
+      .payoutToken ?? "USDT"),
     questions: questions.map((q) => ({
       prompt: q.prompt,
       choices: q.choices,
@@ -127,6 +135,7 @@ export function QuizForm({
         prizeAmounts: v.prizeAmounts.map((s) => s.trim()).filter(Boolean),
         difficulty: v.difficulty,
         coverColor: v.coverColor,
+        payoutToken: v.payoutToken,
         questions: v.questions.map((q) => ({
           prompt: q.prompt.trim(),
           choices: q.choices.map((c) => ({ id: c.id, label: c.label.trim() })),
@@ -144,6 +153,37 @@ export function QuizForm({
     .map((a) => Number(a))
     .filter((n) => Number.isFinite(n))
     .reduce((a, b) => a + b, 0);
+
+  // Treasury balance gate. Whenever the picked token or the total pool
+  // changes, re-check available funds. We rely on the server cache (30s)
+  // for the heavy lifting; the polling done by <DepositPanel /> will
+  // unlock the form once a deposit lands.
+  type Treasury = {
+    address: string;
+    available: Record<PayoutTokenSymbol, string>;
+  };
+  const [treasury, setTreasury] = useState<Treasury | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await adminApi.get<Treasury>("/admin/treasury");
+        if (!cancelled) setTreasury(data);
+      } catch {
+        // Not fatal — server-side balance check at submit will catch it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Re-fetch when the picked token changes; the polling loop in
+    // DepositPanel handles the steady-state refresh.
+  }, [v.payoutToken]);
+  const availableForToken = treasury
+    ? Number(treasury.available[v.payoutToken] ?? "0")
+    : null;
+  const treasurySufficient =
+    availableForToken == null || availableForToken >= totalPool;
 
   return (
     <>
@@ -399,17 +439,53 @@ export function QuizForm({
           )}
 
           {tab === "prizes" && (
+            <>
             <div className="adm-card">
               <div className="adm-card-h">
-                <h3>Prize pool (USDT)</h3>
+                <h3>Prize pool ({v.payoutToken})</h3>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "var(--a-ink-soft)" }}>
-                  Total: ${Number(totalPool.toFixed(6))}
+                  Total: {Number(totalPool.toFixed(6))} {v.payoutToken}
                 </div>
               </div>
               <div style={{ padding: 18 }}>
                 <p style={{ fontSize: 12, color: "var(--a-ink-faint)", marginBottom: 12 }}>
                   Top-N prizes — position 1 is 1st place. Auto-paid when the game ends.
                 </p>
+                {/* Token picker. Choosing CELO vs a stablecoin re-runs the
+                  * treasury balance check below. */}
+                <div className="adm-field" style={{ marginBottom: 14 }}>
+                  <label>Payout token</label>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {(["CELO", "USDC", "USDT"] as const).map((sym) => (
+                      <button
+                        key={sym}
+                        type="button"
+                        onClick={() => patch({ payoutToken: sym })}
+                        className={`adm-btn adm-btn--sm${v.payoutToken === sym ? " adm-btn--primary" : ""}`}
+                        style={{ minWidth: 64 }}
+                      >
+                        {sym}
+                      </button>
+                    ))}
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: treasurySufficient
+                        ? "var(--a-primary, #16a34a)"
+                        : "var(--a-wrong, #b91c1c)",
+                      fontWeight: 700,
+                      marginTop: 6,
+                      display: "inline-block",
+                    }}
+                  >
+                    {availableForToken == null
+                      ? "Checking treasury balance…"
+                      : treasurySufficient
+                        ? `✓ Treasury has ${availableForToken} ${v.payoutToken} available`
+                        : `⚠ Need ${(totalPool - availableForToken).toFixed(v.payoutToken === "CELO" ? 4 : 2)} more ${v.payoutToken} — see deposit panel below`}
+                  </span>
+                </div>
                 <div
                   style={{
                     display: "grid",
@@ -456,6 +532,22 @@ export function QuizForm({
                 </div>
               </div>
             </div>
+            {!treasurySufficient && treasury && totalPool > 0 && (
+              <DepositPanel
+                token={v.payoutToken}
+                required={totalPool}
+                treasuryAddress={treasury.address}
+                onSatisfied={() => {
+                  // Re-fetch the available figure so the inline status
+                  // flips to ✓ — DepositPanel itself stops polling.
+                  void adminApi
+                    .get<Treasury>("/admin/treasury")
+                    .then((d) => setTreasury(d))
+                    .catch(() => {});
+                }}
+              />
+            )}
+            </>
           )}
 
           {tab === "review" && (

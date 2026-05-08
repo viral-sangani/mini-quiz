@@ -9,6 +9,7 @@ import { TopBar } from "@/components/TopBar";
 import { Crumbs } from "@/components/Crumbs";
 import { PayoutFailureCell } from "@/components/PayoutFailureCell";
 import { useToast } from "@/components/Toast";
+import { TreasurySection } from "@/components/admin/TreasurySection";
 import { KpiCard, KpiGrid } from "@/components/KpiCard";
 import { PayoutStatusPill } from "@/components/StatusPill";
 import { AdminIcon } from "@/components/AdminIcon";
@@ -139,6 +140,8 @@ export default function PayoutsPage() {
             </div>
           </div>
         </div>
+
+        <TreasurySection />
 
         <KpiGrid>
           <KpiCard

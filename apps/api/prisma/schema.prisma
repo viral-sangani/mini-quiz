@@ -46,6 +46,15 @@ enum QuizKind {
   DAILY
 }
 
+// Token paid out as prize. CELO is the chain's native asset; USDC and USDT
+// are ERC-20 stablecoins on Celo mainnet. The chain client picks the right
+// transfer path (sendTransaction value vs. ERC-20 transfer) by symbol.
+enum PayoutToken {
+  CELO
+  USDC
+  USDT
+}
+
 // Unified User: admins authenticate via email+Google (NextAuth); players via
 // their MiniPay wallet. walletAddress is lowercase. Either email or
 // walletAddress (or both) can be null depending on the account type.
@@ -194,6 +203,9 @@ model Quiz {
   // Set only for kind=DAILY. The UTC date the daily quiz is active. Combined
   // with kind into a unique key so at most one DAILY exists per UTC date.
   dailyDate      DateTime?  @db.Date
+  // Which token is disbursed when this quiz auto-pays its winners. Default
+  // USDT preserves pre-multi-token behavior on existing rows.
+  payoutToken    PayoutToken @default(USDT)
   archivedAt     DateTime?
   createdById    String
   createdAt      DateTime   @default(now())

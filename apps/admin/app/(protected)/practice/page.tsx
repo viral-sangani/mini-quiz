@@ -18,6 +18,9 @@ type AdminQuiz = {
   published: boolean;
   questionCount: number;
   headCount: number;
+  playCount: number;
+  avgScorePct: number;
+  lastPlayedAt: string | null;
   createdAt: string;
 };
 
@@ -78,6 +81,15 @@ export default function PracticeListPage() {
     }
   };
 
+  // Tabs: Active (published) default; Drafts (everything not yet published).
+  // Both sub-lists sorted by total plays desc so the most-played quizzes
+  // float to the top.
+  const [tab, setTab] = useState<"active" | "drafts">("active");
+  const filtered = quizzes.filter((q) =>
+    tab === "active" ? q.published : !q.published,
+  );
+  filtered.sort((a, b) => b.playCount - a.playCount);
+
   const counts = {
     published: quizzes.filter((q) => q.published).length,
     drafts: quizzes.filter((q) => !q.published).length,
@@ -113,31 +125,52 @@ export default function PracticeListPage() {
             {error}
           </div>
         )}
-        {loading && quizzes.length === 0 ? (
-          <div className="adm-card" style={{ padding: 18 }}>
-            Loading…
-          </div>
-        ) : quizzes.length === 0 ? (
+        <div className="adm-card" style={{ overflow: "hidden" }}>
           <div
-            className="adm-card"
-            style={{ padding: 18, color: "var(--a-ink-faint)" }}
+            className="adm-card-h"
+            style={{ display: "flex", alignItems: "center", gap: 12 }}
           >
-            No practice quizzes yet. Create your first one.
+            <div className="adm-tabs" style={{ borderBottom: "none", margin: 0 }}>
+              <button
+                type="button"
+                className={`adm-tab${tab === "active" ? " active" : ""}`}
+                onClick={() => setTab("active")}
+              >
+                Active · {counts.published}
+              </button>
+              <button
+                type="button"
+                className={`adm-tab${tab === "drafts" ? " active" : ""}`}
+                onClick={() => setTab("drafts")}
+              >
+                Drafts · {counts.drafts}
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="adm-card" style={{ overflow: "hidden" }}>
+          {loading && quizzes.length === 0 ? (
+            <div style={{ padding: 18 }}>Loading…</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: 18, color: "var(--a-ink-faint)" }}>
+              {tab === "active"
+                ? "No published practice quizzes yet."
+                : "No drafts."}
+            </div>
+          ) : (
             <table className="adm-table">
               <thead>
                 <tr>
                   <th>Title</th>
                   <th>Questions</th>
                   <th>Players</th>
+                  <th>Plays</th>
+                  <th>Avg score</th>
+                  <th>Last played</th>
                   <th>Status</th>
                   <th style={{ textAlign: "right" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {quizzes.map((q) => (
+                {filtered.map((q) => (
                   <tr key={q.id}>
                     <td>
                       <div
@@ -183,6 +216,32 @@ export default function PracticeListPage() {
                     </td>
                     <td>{q.questionCount}</td>
                     <td>{q.headCount}</td>
+                    <td>{q.playCount}</td>
+                    <td>
+                      {q.playCount > 0 ? (
+                        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                          {q.avgScorePct}%
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--a-ink-faint)" }}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      {q.lastPlayedAt ? (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "var(--a-ink-soft)",
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                          title={q.lastPlayedAt}
+                        >
+                          {formatRelative(q.lastPlayedAt)}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--a-ink-faint)" }}>—</span>
+                      )}
+                    </td>
                     <td>
                       <span
                         style={{
@@ -242,9 +301,23 @@ export default function PracticeListPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </>
   );
+}
+
+// "5 minutes ago" / "2 days ago" — coarse but readable. Stat freshness
+// matters more than exact timestamps in the admin list.
+function formatRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return iso;
+  const diff = Date.now() - t;
+  if (diff < 60_000) return "just now";
+  if (diff < 60 * 60_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 24 * 60 * 60_000) return `${Math.floor(diff / (60 * 60_000))}h ago`;
+  if (diff < 30 * 24 * 60 * 60_000)
+    return `${Math.floor(diff / (24 * 60 * 60_000))}d ago`;
+  return new Date(iso).toLocaleDateString();
 }

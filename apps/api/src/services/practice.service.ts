@@ -240,8 +240,14 @@ export type AdminPracticeQuiz = {
   published: boolean;
   questionCount: number;
   // Distinct-user count of plays (started or finished — we count anyone who
-  // entered the quiz). Surfaces as "head count" in the admin grid.
+  // entered the quiz).
   headCount: number;
+  // Total finished plays across all users (drives the admin sort).
+  playCount: number;
+  // Average score % over finished plays. 0 when there are no plays yet.
+  avgScorePct: number;
+  // ISO timestamp of the most recent finished play, or null.
+  lastPlayedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -251,7 +257,7 @@ export async function listAdminPracticeQuizzes(): Promise<AdminPracticeQuiz[]> {
     include: { _count: { select: { questions: true } } },
     orderBy: { createdAt: "desc" },
   });
-  // Per-quiz distinct user count via groupBy.
+  // Distinct user count + per-quiz aggregates in one DB read each.
   const grouped = await prisma.practicePlay.groupBy({
     by: ["quizId", "userId"],
     _count: { _all: true },
@@ -261,19 +267,63 @@ export async function listAdminPracticeQuizzes(): Promise<AdminPracticeQuiz[]> {
     if (!byQuiz.has(g.quizId)) byQuiz.set(g.quizId, new Set());
     byQuiz.get(g.quizId)!.add(g.userId);
   }
-  return quizzes.map((q) => ({
-    id: q.id,
-    slug: q.slug,
-    title: q.title,
-    description: q.description,
-    iconName: q.iconName,
-    coverColor: q.coverColor,
-    published: q.published,
-    questionCount: q._count.questions,
-    headCount: byQuiz.get(q.id)?.size ?? 0,
-    createdAt: q.createdAt.toISOString(),
-    updatedAt: q.updatedAt.toISOString(),
-  }));
+
+  // Finished-play stats (count, score totals, last play). Only finished
+  // plays count toward "plays" — abandons are noise.
+  const finished = await prisma.practicePlay.findMany({
+    where: { finishedAt: { not: null } },
+    select: {
+      quizId: true,
+      scoreCorrect: true,
+      scoreTotal: true,
+      finishedAt: true,
+    },
+  });
+  type Stats = {
+    plays: number;
+    correctSum: number;
+    totalSum: number;
+    last: Date | null;
+  };
+  const statsByQuiz = new Map<string, Stats>();
+  for (const p of finished) {
+    let s = statsByQuiz.get(p.quizId);
+    if (!s) {
+      s = { plays: 0, correctSum: 0, totalSum: 0, last: null };
+      statsByQuiz.set(p.quizId, s);
+    }
+    s.plays += 1;
+    s.correctSum += p.scoreCorrect;
+    s.totalSum += p.scoreTotal;
+    if (p.finishedAt && (!s.last || p.finishedAt > s.last)) {
+      s.last = p.finishedAt;
+    }
+  }
+
+  return quizzes.map((q) => {
+    const s = statsByQuiz.get(q.id);
+    const playCount = s?.plays ?? 0;
+    const avgScorePct =
+      s && s.totalSum > 0
+        ? Math.round((s.correctSum / s.totalSum) * 100)
+        : 0;
+    return {
+      id: q.id,
+      slug: q.slug,
+      title: q.title,
+      description: q.description,
+      iconName: q.iconName,
+      coverColor: q.coverColor,
+      published: q.published,
+      questionCount: q._count.questions,
+      headCount: byQuiz.get(q.id)?.size ?? 0,
+      playCount,
+      avgScorePct,
+      lastPlayedAt: s?.last?.toISOString() ?? null,
+      createdAt: q.createdAt.toISOString(),
+      updatedAt: q.updatedAt.toISOString(),
+    };
+  });
 }
 
 export type AdminPracticeQuestion = {
@@ -311,6 +361,11 @@ export async function getAdminPracticeQuizDetail(
     published: quiz.published,
     questionCount: quiz._count.questions,
     headCount: distinct.length,
+    // Detail page doesn't display these stats, but the type contract
+    // demands them. Compute on demand if we ever need them here.
+    playCount: 0,
+    avgScorePct: 0,
+    lastPlayedAt: null,
     createdAt: quiz.createdAt.toISOString(),
     updatedAt: quiz.updatedAt.toISOString(),
     questions: quiz.questions.map((q) => ({
@@ -358,6 +413,9 @@ export async function createPracticeQuiz(
     published: q.published,
     questionCount: 0,
     headCount: 0,
+    playCount: 0,
+    avgScorePct: 0,
+    lastPlayedAt: null,
     createdAt: q.createdAt.toISOString(),
     updatedAt: q.updatedAt.toISOString(),
   };

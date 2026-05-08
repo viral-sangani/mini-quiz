@@ -18,6 +18,7 @@ import { practicePublicRoutes } from "./routes/practice.public.js";
 import { dailyAdminRoutes } from "./routes/daily.admin.js";
 import { practiceAdminRoutes } from "./routes/practice.admin.js";
 import { aiGenAdminRoutes } from "./routes/ai-gen.admin.js";
+import { treasuryAdminRoutes } from "./routes/treasury.admin.js";
 import { startScheduler, stopScheduler } from "./services/scheduler.js";
 
 async function main() {
@@ -71,6 +72,7 @@ async function main() {
   await app.register(dailyAdminRoutes);
   await app.register(practiceAdminRoutes);
   await app.register(aiGenAdminRoutes);
+  await app.register(treasuryAdminRoutes);
 
   const schedulerHandle = startScheduler(app.log);
 
