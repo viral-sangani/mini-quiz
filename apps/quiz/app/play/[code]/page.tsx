@@ -656,7 +656,7 @@ function PreLobbyScreen({ quiz }: { quiz: PublicQuiz }) {
               textShadow: "0 4px 0 rgba(0,0,0,0.18)",
             }}
           >
-            {formatCountdown(msToLobby)}
+            {formatDuration(msToLobby)}
           </div>
           <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, opacity: 0.92 }}>
             Quiz starts at {new Date(quiz.scheduledStart!).toLocaleString()}
@@ -733,9 +733,13 @@ function LobbyScreen({
             <div className={left < 10_000 ? "mq-pulse" : ""}>
               <div
                 className="mq-h1 mq-num"
-                style={{ fontSize: 56, color: "var(--primary)", lineHeight: 1 }}
+                style={{
+                  fontSize: left >= 86_400_000 ? 28 : left >= 3_600_000 ? 36 : 56,
+                  color: "var(--primary)",
+                  lineHeight: 1,
+                }}
               >
-                {formatCountdown(left)}
+                {formatDuration(left)}
               </div>
             </div>
           </div>
@@ -759,7 +763,7 @@ function LobbyScreen({
         </div>
         <h2 className="mq-h2" style={{ marginTop: 4 }}>Ready up!</h2>
         <p className="mq-body" style={{ fontSize: 14 }}>
-          Quiz starts in {formatSecondsHuman(left)}
+          Quiz starts in {formatDuration(left)}
         </p>
       </div>
 
@@ -1514,20 +1518,16 @@ function Header({ title, backHref }: { title: string; backHref: string }) {
   );
 }
 
-function formatCountdown(ms: number): string {
+function formatDuration(ms: number): string {
   if (ms < 0) ms = 0;
   const totalSec = Math.ceil(ms / 1000);
-  const m = Math.floor(totalSec / 60);
+  const days = Math.floor(totalSec / 86_400);
+  const hours = Math.floor((totalSec % 86_400) / 3_600);
+  const m = Math.floor((totalSec % 3_600) / 60);
   const s = totalSec % 60;
-  if (m > 0) return `${m}:${String(s).padStart(2, "0")}`;
-  return `0:${String(s).padStart(2, "0")}`;
-}
-
-function formatSecondsHuman(ms: number): string {
-  const sec = Math.max(0, Math.ceil(ms / 1000));
-  if (sec < 60) return `${sec} seconds`;
-  const m = Math.floor(sec / 60);
-  return `${m} minute${m === 1 ? "" : "s"}`;
+  const clock = `${String(hours).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  if (days > 0) return `${days}d ${clock}`;
+  return clock;
 }
 
 function ordinal(n: number): string {

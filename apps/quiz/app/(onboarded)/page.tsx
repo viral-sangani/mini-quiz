@@ -193,54 +193,6 @@ export default function HomePage() {
         </>
       )}
 
-      {/* Redo onboarding entry */}
-      <div style={{ padding: "0 16px 16px" }}>
-        <Link href="/onboarding/avatar" style={{ textDecoration: "none" }}>
-          <button
-            style={{
-              width: "100%",
-              textAlign: "left",
-              background: "var(--card)",
-              border: "2px dashed var(--line)",
-              borderRadius: 16,
-              padding: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              cursor: "pointer",
-            }}
-          >
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "var(--berry)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Icon name="sparkle" size={18} color="white" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontWeight: 900,
-                  fontSize: 14,
-                }}
-              >
-                Redo your setup
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-soft)" }}>
-                Change avatar or username
-              </div>
-            </div>
-            <Icon name="chevron-right" size={16} color="var(--ink-faint)" />
-          </button>
-        </Link>
-      </div>
     </div>
   );
 }

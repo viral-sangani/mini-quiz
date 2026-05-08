@@ -162,6 +162,36 @@ export function QuizForm({
 
   const update = async () => {
     setError(null);
+    if (!v.title.trim()) {
+      setTab("basics");
+      setError("Game title is required");
+      return;
+    }
+    if (v.questions.length < 1) {
+      setTab("questions");
+      setError("Add at least one question");
+      return;
+    }
+    for (let i = 0; i < v.questions.length; i++) {
+      const q = v.questions[i]!;
+      if (!q.prompt.trim()) {
+        setTab("questions");
+        setError(`Question ${i + 1}: prompt is required`);
+        return;
+      }
+      for (const c of q.choices) {
+        if (!c.label.trim()) {
+          setTab("questions");
+          setError(`Question ${i + 1}: choice ${c.id.toUpperCase()} is empty`);
+          return;
+        }
+      }
+      if (!q.choices.find((c) => c.id === q.correctChoiceId)) {
+        setTab("questions");
+        setError(`Question ${i + 1}: correct answer is missing`);
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       await onSubmit({

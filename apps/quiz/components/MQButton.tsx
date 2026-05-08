@@ -69,16 +69,17 @@ export const MQButton = forwardRef<HTMLButtonElement, Props>(function MQButton(
     .filter(Boolean)
     .join(" ");
 
-  // When tapping, scale down to 0.94 and let the spring release snap back
-  // with a small overshoot. Disabled buttons + reduced-motion users get
-  // the static rendering (CSS :active still gives them a translateY hint).
+  // When tapping, scale down and sink into the 3D shadow. The spring release
+  // gives phone taps a subtle bounce without making navigation feel delayed.
+  // Disabled buttons + reduced-motion users get the static rendering
+  // (CSS :active still gives them a translateY hint).
   const tapAnim =
-    disabled || reduced ? undefined : { scale: 0.94 };
+    disabled || reduced ? undefined : { scale: 0.93, y: 3 };
   const springTransition = {
     type: "spring" as const,
-    stiffness: 380,
-    damping: 14,
-    mass: 0.6,
+    stiffness: 520,
+    damping: 18,
+    mass: 0.45,
   };
 
   return (

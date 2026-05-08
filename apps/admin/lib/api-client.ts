@@ -20,6 +20,31 @@ export class ApiError extends Error {
 
 type FetchOpts = RequestInit & { token?: string };
 
+function messageFromErrorBody(body: unknown): string | null {
+  if (!body || typeof body !== "object" || !("error" in body)) return null;
+  const error = (body as { error: unknown }).error;
+  if (typeof error === "string") return error;
+  if (!error || typeof error !== "object") return null;
+
+  const fieldErrors =
+    "fieldErrors" in error &&
+    error.fieldErrors &&
+    typeof error.fieldErrors === "object"
+      ? (error.fieldErrors as Record<string, unknown>)
+      : null;
+  if (!fieldErrors) return null;
+
+  const messages = Object.entries(fieldErrors)
+    .flatMap(([field, value]) =>
+      Array.isArray(value)
+        ? value
+            .filter((msg): msg is string => typeof msg === "string")
+            .map((msg) => `${field}: ${msg}`)
+        : [],
+    );
+  return messages.length > 0 ? messages.join("; ") : null;
+}
+
 async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
   const { token, headers, ...rest } = opts;
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -40,10 +65,7 @@ async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
     } catch {
       body = text;
     }
-    const message =
-      (body && typeof body === "object" && "error" in body && typeof (body as { error: unknown }).error === "string"
-        ? (body as { error: string }).error
-        : null) ?? `API ${res.status} ${path}`;
+    const message = messageFromErrorBody(body) ?? `API ${res.status} ${path}`;
     const code =
       body && typeof body === "object" && "code" in body && typeof (body as { code: unknown }).code === "string"
         ? (body as { code: string }).code
