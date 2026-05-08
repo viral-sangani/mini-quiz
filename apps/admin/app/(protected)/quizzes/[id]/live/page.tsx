@@ -110,23 +110,42 @@ export default function LiveProjectorPage({
             <div className="adm-page-h">
               <div>
                 <div className="adm-crumbs">Games / {quiz.title}</div>
-                <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <h1
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
                   {quiz.title}{" "}
                   <QuizStatusPill status={effectiveStatus ?? quiz.status} />
+                  {/* Auto-end indicator. Makes it explicit that the scheduler
+                    * ends the game automatically — admins shouldn't think
+                    * they need to click anything. */}
+                  {isLive && secondsRemaining != null && (
+                    <span
+                      title="The scheduler ends this quiz automatically when the timer hits zero."
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        letterSpacing: 0.04,
+                        textTransform: "uppercase",
+                        background: "var(--a-bg)",
+                        color: "var(--a-ink-soft)",
+                        border: "1px solid var(--a-line)",
+                      }}
+                    >
+                      <AdminIcon name="clock" size={11} color="currentColor" />
+                      Auto-ends in {formatRemaining(secondsRemaining)}
+                    </span>
+                  )}
                 </h1>
-              </div>
-              <div className="actions">
-                <button className="adm-btn" disabled title="Pause not supported">
-                  <AdminIcon name="alert" size={14} color="var(--a-ink-faint)" /> Pause
-                </button>
-                <button
-                  type="button"
-                  onClick={onEndGame}
-                  disabled={ending || isEnded}
-                  className="adm-btn adm-btn--danger"
-                >
-                  {ending ? "Ending…" : "End game now"}
-                </button>
               </div>
             </div>
 
@@ -344,9 +363,55 @@ export default function LiveProjectorPage({
                 )}
               </div>
             </div>
+
+            {/* Force-end escape hatch. The scheduler ends LIVE quizzes
+              * automatically when their duration elapses, so this is only
+              * for stuck games (e.g. a broken question or a network blip
+              * that prevented the auto-end tick from running). Tucked at
+              * the bottom of the page so it isn't the primary action. */}
+            {isLive && (
+              <div
+                style={{
+                  marginTop: 24,
+                  padding: 14,
+                  borderRadius: 10,
+                  border: "1px dashed var(--a-line)",
+                  background: "var(--a-bg)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ fontSize: 12, color: "var(--a-ink-soft)" }}>
+                  This quiz auto-ends when the timer hits zero. Use{" "}
+                  <strong>Force end</strong> only if it&apos;s stuck.
+                </div>
+                <button
+                  type="button"
+                  onClick={onEndGame}
+                  disabled={ending || isEnded}
+                  className="adm-btn adm-btn--sm"
+                  style={{ color: "var(--a-wrong)" }}
+                >
+                  {ending ? "Ending…" : "Force end"}
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
     </>
   );
+}
+
+// Format a remaining-seconds count as "Mm Ss" or "Ns". Used by the
+// live monitor's auto-ends indicator.
+function formatRemaining(secs: number): string {
+  if (secs <= 0) return "0s";
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
