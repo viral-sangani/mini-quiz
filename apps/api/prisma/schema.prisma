@@ -89,8 +89,8 @@ model User {
   accounts       Account[]
   sessions       Session[]
   createdQuizzes Quiz[]       @relation("QuizCreator")
-  practiceTopics PracticeTopic[] @relation("PracticeTopicCreator")
-  practicePlays  PracticePlay[]
+  practiceQuizzes PracticeQuiz[] @relation("PracticeQuizCreator")
+  practicePlays   PracticePlay[]
   roomPlayers    RoomPlayer[]
   answers        Answer[]
   payouts        Payout[]
@@ -287,11 +287,12 @@ model Payout {
   @@index([status])
 }
 
-// Practice mode — solo learning, no XP, no leaderboard. Each topic has a
-// mutable pool of questions; a play samples 10 random ones. Admins refresh
-// pools every few days (with AI assistance). Per-topic head count
-// (`PracticePlay.userId` distinct count) is the only metric admin sees.
-model PracticeTopic {
+// Practice mode — solo learning, no XP, no leaderboard. Each practice quiz
+// has a mutable pool of questions; a play samples 10 random ones. Operators
+// refresh pools every few days (with AI assistance). Per-quiz head count
+// (`PracticePlay.userId` distinct count) is the only metric the admin
+// console shows.
+model PracticeQuiz {
   id          String   @id @default(cuid())
   slug        String   @unique
   title       String
@@ -303,7 +304,7 @@ model PracticeTopic {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  createdBy User               @relation("PracticeTopicCreator", fields: [createdById], references: [id])
+  createdBy User               @relation("PracticeQuizCreator", fields: [createdById], references: [id])
   questions PracticeQuestion[]
   plays     PracticePlay[]
 
@@ -312,28 +313,28 @@ model PracticeTopic {
 
 model PracticeQuestion {
   id              String   @id @default(cuid())
-  topicId         String
+  quizId          String
   prompt          String
   // Same shape as Question.choices: [{id, label}, ...]. JSON to keep it
   // schema-flexible.
   choices         Json
   correctChoiceId String
-  // Why-correct copy shown after each answer. Optional so admins can author
-  // questions without explanations if they want.
+  // Why-correct copy shown after each answer. Optional so questions can be
+  // authored without explanations if desired.
   explanation     String?
   createdAt       DateTime @default(now())
 
-  topic PracticeTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  quiz PracticeQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
-  @@index([topicId])
+  @@index([quizId])
 }
 
-// One row per (user, topic, session). Used for head count + practice badge
+// One row per (user, quiz, session). Used for head count + practice badge
 // thresholds. Not used for any leaderboard. Keeps the played question IDs
 // so the player can be shown which set of questions they got.
 model PracticePlay {
   id           String    @id @default(cuid())
-  topicId      String
+  quizId       String
   userId       String
   startedAt    DateTime  @default(now())
   finishedAt   DateTime?
@@ -341,10 +342,10 @@ model PracticePlay {
   scoreCorrect Int       @default(0)
   scoreTotal   Int       @default(0)
 
-  topic PracticeTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  user  User          @relation(fields: [userId], references: [id])
+  quiz PracticeQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id])
 
-  @@index([topicId, userId])
+  @@index([quizId, userId])
   @@index([userId])
 }
 

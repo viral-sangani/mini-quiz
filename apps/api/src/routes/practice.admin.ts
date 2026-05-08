@@ -3,13 +3,13 @@ import { z } from "zod";
 import { requireAdmin } from "../auth.js";
 import {
   bulkAddQuestions,
-  createTopic,
+  createPracticeQuiz,
+  deletePracticeQuiz,
   deleteQuestion,
-  deleteTopic,
-  getAdminTopicDetail,
-  listAdminTopics,
+  getAdminPracticeQuizDetail,
+  listAdminPracticeQuizzes,
+  updatePracticeQuiz,
   updateQuestion,
-  updateTopic,
 } from "../services/practice.service.js";
 
 const choiceSchema = z.object({
@@ -29,7 +29,7 @@ const slugSchema = z
   .max(40)
   .regex(/^[a-z0-9-]+$/, "slug must be lowercase, numbers, hyphens");
 
-const createTopicSchema = z.object({
+const createQuizSchema = z.object({
   slug: slugSchema,
   title: z.string().min(1).max(120),
   description: z.string().max(800).optional().nullable(),
@@ -37,37 +37,37 @@ const createTopicSchema = z.object({
   coverColor: z.string().max(40).optional(),
   published: z.boolean().optional(),
 });
-const updateTopicSchema = createTopicSchema.partial();
+const updateQuizSchema = createQuizSchema.partial();
 
 export async function practiceAdminRoutes(app: FastifyInstance) {
-  app.get("/admin/practice/topics", async (req, reply) => {
+  app.get("/admin/practice/quizzes", async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;
-    const topics = await listAdminTopics();
-    return { topics };
+    const quizzes = await listAdminPracticeQuizzes();
+    return { quizzes };
   });
 
   app.get<{ Params: { id: string } }>(
-    "/admin/practice/topics/:id",
+    "/admin/practice/quizzes/:id",
     async (req, reply) => {
       const admin = await requireAdmin(req, reply);
       if (!admin) return;
-      const detail = await getAdminTopicDetail(req.params.id);
-      if (!detail) return reply.code(404).send({ error: "Topic not found" });
+      const detail = await getAdminPracticeQuizDetail(req.params.id);
+      if (!detail) return reply.code(404).send({ error: "Practice quiz not found" });
       return detail;
     },
   );
 
-  app.post("/admin/practice/topics", async (req, reply) => {
+  app.post("/admin/practice/quizzes", async (req, reply) => {
     const admin = await requireAdmin(req, reply);
     if (!admin) return;
-    const parsed = createTopicSchema.safeParse(req.body);
+    const parsed = createQuizSchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
     try {
-      const topic = await createTopic(admin.userId, parsed.data);
-      return { topic };
+      const quiz = await createPracticeQuiz(admin.userId, parsed.data);
+      return { quiz };
     } catch (e) {
       const err = e as Error & { code?: string };
       if (err.message?.includes("Unique") || (err as { code?: string }).code === "P2002") {
@@ -78,16 +78,16 @@ export async function practiceAdminRoutes(app: FastifyInstance) {
   });
 
   app.patch<{ Params: { id: string } }>(
-    "/admin/practice/topics/:id",
+    "/admin/practice/quizzes/:id",
     async (req, reply) => {
       const admin = await requireAdmin(req, reply);
       if (!admin) return;
-      const parsed = updateTopicSchema.safeParse(req.body);
+      const parsed = updateQuizSchema.safeParse(req.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: parsed.error.flatten() });
       }
       try {
-        await updateTopic(req.params.id, parsed.data);
+        await updatePracticeQuiz(req.params.id, parsed.data);
         return { ok: true };
       } catch (e) {
         return reply
@@ -98,12 +98,12 @@ export async function practiceAdminRoutes(app: FastifyInstance) {
   );
 
   app.delete<{ Params: { id: string } }>(
-    "/admin/practice/topics/:id",
+    "/admin/practice/quizzes/:id",
     async (req, reply) => {
       const admin = await requireAdmin(req, reply);
       if (!admin) return;
       try {
-        await deleteTopic(req.params.id);
+        await deletePracticeQuiz(req.params.id);
         return { ok: true };
       } catch (e) {
         return reply
@@ -114,7 +114,7 @@ export async function practiceAdminRoutes(app: FastifyInstance) {
   );
 
   app.post<{ Params: { id: string } }>(
-    "/admin/practice/topics/:id/questions",
+    "/admin/practice/quizzes/:id/questions",
     async (req, reply) => {
       const admin = await requireAdmin(req, reply);
       if (!admin) return;

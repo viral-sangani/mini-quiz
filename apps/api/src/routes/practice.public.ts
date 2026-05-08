@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
   finishPracticeSession,
-  listPublishedTopics,
+  listPublishedPracticeQuizzes,
   startPracticeSession,
   submitPracticeAnswer,
 } from "../services/practice.service.js";
@@ -25,9 +25,9 @@ const finishSchema = z.object({
 });
 
 export async function practicePublicRoutes(app: FastifyInstance) {
-  app.get("/practice/topics", async () => {
-    const topics = await listPublishedTopics();
-    return { topics };
+  app.get("/practice/quizzes", async () => {
+    const quizzes = await listPublishedPracticeQuizzes();
+    return { quizzes };
   });
 
   app.post("/practice/start", async (req, reply) => {

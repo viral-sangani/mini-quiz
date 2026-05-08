@@ -4,8 +4,8 @@ import { awardBadge } from "./badge.service.js";
 
 export const PRACTICE_QUESTIONS_PER_PLAY = 10;
 
-// Public-safe shape of a practice topic (no admin-only fields like createdById).
-export type PublicPracticeTopic = {
+// Public-safe shape of a practice quiz (no admin-only fields like createdById).
+export type PublicPracticeQuiz = {
   id: string;
   slug: string;
   title: string;
@@ -22,22 +22,24 @@ export type PublicPracticeQuestion = {
   choices: Choice[];
 };
 
-export async function listPublishedTopics(): Promise<PublicPracticeTopic[]> {
-  const topics = await prisma.practiceTopic.findMany({
+export async function listPublishedPracticeQuizzes(): Promise<
+  PublicPracticeQuiz[]
+> {
+  const quizzes = await prisma.practiceQuiz.findMany({
     where: { published: true },
     include: { _count: { select: { questions: true } } },
     orderBy: { createdAt: "asc" },
   });
-  return topics
-    .filter((t) => t._count.questions >= PRACTICE_QUESTIONS_PER_PLAY)
-    .map((t) => ({
-      id: t.id,
-      slug: t.slug,
-      title: t.title,
-      description: t.description,
-      iconName: t.iconName,
-      coverColor: t.coverColor,
-      questionCount: t._count.questions,
+  return quizzes
+    .filter((q) => q._count.questions >= PRACTICE_QUESTIONS_PER_PLAY)
+    .map((q) => ({
+      id: q.id,
+      slug: q.slug,
+      title: q.title,
+      description: q.description,
+      iconName: q.iconName,
+      coverColor: q.coverColor,
+      questionCount: q._count.questions,
     }));
 }
 
@@ -45,11 +47,15 @@ export type StartPracticeResult =
   | {
       kind: "ok";
       playId: string;
-      topicId: string;
+      quizId: string;
       title: string;
       questions: PublicPracticeQuestion[];
     }
-  | { kind: "error"; error: string; code: "NOT_FOUND" | "TOO_FEW" | "BAD_INPUT" | "NEEDS_ONBOARDING" };
+  | {
+      kind: "error";
+      error: string;
+      code: "NOT_FOUND" | "TOO_FEW" | "BAD_INPUT" | "NEEDS_ONBOARDING";
+    };
 
 export async function startPracticeSession(
   walletAddress: string,
@@ -70,31 +76,31 @@ export async function startPracticeSession(
       code: "NEEDS_ONBOARDING",
     };
   }
-  const topic = await prisma.practiceTopic.findUnique({
+  const quiz = await prisma.practiceQuiz.findUnique({
     where: { slug },
     include: { questions: true },
   });
-  if (!topic || !topic.published) {
-    return { kind: "error", error: "Topic not found", code: "NOT_FOUND" };
+  if (!quiz || !quiz.published) {
+    return { kind: "error", error: "Practice quiz not found", code: "NOT_FOUND" };
   }
-  if (topic.questions.length < PRACTICE_QUESTIONS_PER_PLAY) {
+  if (quiz.questions.length < PRACTICE_QUESTIONS_PER_PLAY) {
     return {
       kind: "error",
-      error: "Topic has too few questions to play",
+      error: "Practice quiz has too few questions to play",
       code: "TOO_FEW",
     };
   }
   // Sample 10 random questions (Fisher-Yates partial shuffle).
-  const ids = topic.questions.map((q) => q.id);
+  const ids = quiz.questions.map((q) => q.id);
   for (let i = 0; i < PRACTICE_QUESTIONS_PER_PLAY; i++) {
     const j = i + Math.floor(Math.random() * (ids.length - i));
     [ids[i], ids[j]] = [ids[j]!, ids[i]!];
   }
   const picked = ids.slice(0, PRACTICE_QUESTIONS_PER_PLAY);
-  const byId = new Map(topic.questions.map((q) => [q.id, q]));
+  const byId = new Map(quiz.questions.map((q) => [q.id, q]));
   const play = await prisma.practicePlay.create({
     data: {
-      topicId: topic.id,
+      quizId: quiz.id,
       userId: user.id,
       questionIds: picked,
       scoreTotal: PRACTICE_QUESTIONS_PER_PLAY,
@@ -103,8 +109,8 @@ export async function startPracticeSession(
   return {
     kind: "ok",
     playId: play.id,
-    topicId: topic.id,
-    title: topic.title,
+    quizId: quiz.id,
+    title: quiz.title,
     questions: picked.map((id) => {
       const q = byId.get(id)!;
       return {
@@ -192,17 +198,17 @@ export async function finishPracticeSession(
   }
 
   // Practice badges:
-  //   practice_explorer: tried 5 distinct topics
+  //   practice_explorer: tried 5 distinct practice quizzes
   //   practice_scholar:  completed 50 plays
   // Both are computed from finished plays only (so abandons don't count).
   const finished = await prisma.practicePlay.findMany({
     where: { userId: user.id, finishedAt: { not: null } },
-    select: { topicId: true },
+    select: { quizId: true },
   });
-  const distinctTopics = new Set(finished.map((p) => p.topicId)).size;
+  const distinctQuizzes = new Set(finished.map((p) => p.quizId)).size;
 
   const newBadges: string[] = [];
-  if (distinctTopics >= 5) {
+  if (distinctQuizzes >= 5) {
     if (await awardBadge(user.id, "practice_explorer")) {
       newBadges.push("practice_explorer");
     }
@@ -224,7 +230,7 @@ export async function finishPracticeSession(
 // Admin CRUD
 // ---------------------------------------------------------------------------
 
-export type AdminPracticeTopic = {
+export type AdminPracticeQuiz = {
   id: string;
   slug: string;
   title: string;
@@ -234,39 +240,39 @@ export type AdminPracticeTopic = {
   published: boolean;
   questionCount: number;
   // Distinct-user count of plays (started or finished — we count anyone who
-  // entered the topic). Surfaces as "head count" in the admin grid.
+  // entered the quiz). Surfaces as "head count" in the admin grid.
   headCount: number;
   createdAt: string;
   updatedAt: string;
 };
 
-export async function listAdminTopics(): Promise<AdminPracticeTopic[]> {
-  const topics = await prisma.practiceTopic.findMany({
+export async function listAdminPracticeQuizzes(): Promise<AdminPracticeQuiz[]> {
+  const quizzes = await prisma.practiceQuiz.findMany({
     include: { _count: { select: { questions: true } } },
     orderBy: { createdAt: "desc" },
   });
-  // Per-topic distinct user count via groupBy.
+  // Per-quiz distinct user count via groupBy.
   const grouped = await prisma.practicePlay.groupBy({
-    by: ["topicId", "userId"],
+    by: ["quizId", "userId"],
     _count: { _all: true },
   });
-  const byTopic = new Map<string, Set<string>>();
+  const byQuiz = new Map<string, Set<string>>();
   for (const g of grouped) {
-    if (!byTopic.has(g.topicId)) byTopic.set(g.topicId, new Set());
-    byTopic.get(g.topicId)!.add(g.userId);
+    if (!byQuiz.has(g.quizId)) byQuiz.set(g.quizId, new Set());
+    byQuiz.get(g.quizId)!.add(g.userId);
   }
-  return topics.map((t) => ({
-    id: t.id,
-    slug: t.slug,
-    title: t.title,
-    description: t.description,
-    iconName: t.iconName,
-    coverColor: t.coverColor,
-    published: t.published,
-    questionCount: t._count.questions,
-    headCount: byTopic.get(t.id)?.size ?? 0,
-    createdAt: t.createdAt.toISOString(),
-    updatedAt: t.updatedAt.toISOString(),
+  return quizzes.map((q) => ({
+    id: q.id,
+    slug: q.slug,
+    title: q.title,
+    description: q.description,
+    iconName: q.iconName,
+    coverColor: q.coverColor,
+    published: q.published,
+    questionCount: q._count.questions,
+    headCount: byQuiz.get(q.id)?.size ?? 0,
+    createdAt: q.createdAt.toISOString(),
+    updatedAt: q.updatedAt.toISOString(),
   }));
 }
 
@@ -279,36 +285,35 @@ export type AdminPracticeQuestion = {
   createdAt: string;
 };
 
-export async function getAdminTopicDetail(topicId: string): Promise<
-  | (AdminPracticeTopic & { questions: AdminPracticeQuestion[] })
-  | null
-> {
-  const topic = await prisma.practiceTopic.findUnique({
-    where: { id: topicId },
+export async function getAdminPracticeQuizDetail(
+  quizId: string,
+): Promise<(AdminPracticeQuiz & { questions: AdminPracticeQuestion[] }) | null> {
+  const quiz = await prisma.practiceQuiz.findUnique({
+    where: { id: quizId },
     include: {
       questions: { orderBy: { createdAt: "asc" } },
       _count: { select: { questions: true } },
     },
   });
-  if (!topic) return null;
+  if (!quiz) return null;
   const distinct = await prisma.practicePlay.findMany({
-    where: { topicId },
+    where: { quizId },
     select: { userId: true },
     distinct: ["userId"],
   });
   return {
-    id: topic.id,
-    slug: topic.slug,
-    title: topic.title,
-    description: topic.description,
-    iconName: topic.iconName,
-    coverColor: topic.coverColor,
-    published: topic.published,
-    questionCount: topic._count.questions,
+    id: quiz.id,
+    slug: quiz.slug,
+    title: quiz.title,
+    description: quiz.description,
+    iconName: quiz.iconName,
+    coverColor: quiz.coverColor,
+    published: quiz.published,
+    questionCount: quiz._count.questions,
     headCount: distinct.length,
-    createdAt: topic.createdAt.toISOString(),
-    updatedAt: topic.updatedAt.toISOString(),
-    questions: topic.questions.map((q) => ({
+    createdAt: quiz.createdAt.toISOString(),
+    updatedAt: quiz.updatedAt.toISOString(),
+    questions: quiz.questions.map((q) => ({
       id: q.id,
       prompt: q.prompt,
       choices: q.choices as Choice[],
@@ -319,7 +324,7 @@ export async function getAdminTopicDetail(topicId: string): Promise<
   };
 }
 
-export type CreateTopicInput = {
+export type CreatePracticeQuizInput = {
   slug: string;
   title: string;
   description?: string | null;
@@ -328,11 +333,11 @@ export type CreateTopicInput = {
   published?: boolean;
 };
 
-export async function createTopic(
+export async function createPracticeQuiz(
   createdById: string,
-  input: CreateTopicInput,
-): Promise<AdminPracticeTopic> {
-  const t = await prisma.practiceTopic.create({
+  input: CreatePracticeQuizInput,
+): Promise<AdminPracticeQuiz> {
+  const q = await prisma.practiceQuiz.create({
     data: {
       slug: input.slug,
       title: input.title,
@@ -344,25 +349,25 @@ export async function createTopic(
     },
   });
   return {
-    id: t.id,
-    slug: t.slug,
-    title: t.title,
-    description: t.description,
-    iconName: t.iconName,
-    coverColor: t.coverColor,
-    published: t.published,
+    id: q.id,
+    slug: q.slug,
+    title: q.title,
+    description: q.description,
+    iconName: q.iconName,
+    coverColor: q.coverColor,
+    published: q.published,
     questionCount: 0,
     headCount: 0,
-    createdAt: t.createdAt.toISOString(),
-    updatedAt: t.updatedAt.toISOString(),
+    createdAt: q.createdAt.toISOString(),
+    updatedAt: q.updatedAt.toISOString(),
   };
 }
 
-export async function updateTopic(
+export async function updatePracticeQuiz(
   id: string,
-  patch: Partial<CreateTopicInput>,
+  patch: Partial<CreatePracticeQuizInput>,
 ): Promise<void> {
-  await prisma.practiceTopic.update({
+  await prisma.practiceQuiz.update({
     where: { id },
     data: {
       slug: patch.slug,
@@ -375,8 +380,8 @@ export async function updateTopic(
   });
 }
 
-export async function deleteTopic(id: string): Promise<void> {
-  await prisma.practiceTopic.delete({ where: { id } });
+export async function deletePracticeQuiz(id: string): Promise<void> {
+  await prisma.practiceQuiz.delete({ where: { id } });
 }
 
 export type WriteQuestionInput = {
@@ -387,13 +392,13 @@ export type WriteQuestionInput = {
 };
 
 export async function bulkAddQuestions(
-  topicId: string,
+  quizId: string,
   questions: WriteQuestionInput[],
 ): Promise<{ count: number }> {
   if (questions.length === 0) return { count: 0 };
   await prisma.practiceQuestion.createMany({
     data: questions.map((q) => ({
-      topicId,
+      quizId,
       prompt: q.prompt,
       choices: q.choices as unknown as object,
       correctChoiceId: q.correctChoiceId,

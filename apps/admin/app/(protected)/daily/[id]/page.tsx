@@ -51,8 +51,8 @@ export default function DailyEditPage() {
   if (error) {
     return (
       <>
-        <TopBar title="Daily" primaryAction={<span />} />
-        <div className="adm-main">
+        <TopBar title="Daily quiz" />
+        <div className="adm-content">
           <div className="adm-card" style={{ padding: 12, color: "var(--a-danger)" }}>
             {error}
           </div>
@@ -64,8 +64,8 @@ export default function DailyEditPage() {
   if (!detail) {
     return (
       <>
-        <TopBar title="Daily" primaryAction={<span />} />
-        <div className="adm-main">
+        <TopBar title="Daily quiz" />
+        <div className="adm-content">
           <div className="adm-card" style={{ padding: 18 }}>Loading…</div>
         </div>
       </>
@@ -74,12 +74,14 @@ export default function DailyEditPage() {
 
   return (
     <>
-      <TopBar
-        title={`Daily · ${detail.date}`}
-        crumbs={<span>Daily › {detail.title}</span>}
-        primaryAction={<span />}
-      />
-      <div className="adm-main">
+      <TopBar title="Daily quiz" />
+      <div className="adm-content">
+        <div className="adm-page-h">
+          <div>
+            <h1>{detail.title}</h1>
+            <div className="adm-crumbs">Daily › {detail.date}</div>
+          </div>
+        </div>
         <DailyForm
           mode="edit"
           initial={{

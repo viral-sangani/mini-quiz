@@ -8,7 +8,7 @@ import { Pill } from "@/components/Pill";
 import { api } from "@/lib/api-client";
 import { usePlayerCache } from "@/lib/player-cache";
 
-type Topic = {
+type Quiz = {
   id: string;
   slug: string;
   title: string;
@@ -19,11 +19,11 @@ type Topic = {
 };
 
 export default function PracticeListPage() {
-  // Practice topics rarely change. 5 min stale window keeps tab-jumps
+  // Practice quizzes rarely change. 5 min stale window keeps tab-jumps
   // instant (no flicker, no loader) and refetches in the background.
-  const { data, isLoading, error } = usePlayerCache<{ topics: Topic[] }>(
-    "practice-topics",
-    () => api.get<{ topics: Topic[] }>("/practice/topics"),
+  const { data, isLoading, error } = usePlayerCache<{ quizzes: Quiz[] }>(
+    "practice-quizzes",
+    () => api.get<{ quizzes: Quiz[] }>("/practice/quizzes"),
     { staleAfterMs: 5 * 60_000 },
   );
 
@@ -35,8 +35,8 @@ export default function PracticeListPage() {
       </div>
     );
 
-  const topics = data?.topics ?? [];
-  if (topics.length === 0) {
+  const quizzes = data?.quizzes ?? [];
+  if (quizzes.length === 0) {
     return (
       <div
         className="mq-page"
@@ -50,9 +50,9 @@ export default function PracticeListPage() {
         }}
       >
         <Mango pose="sleep" size={120} />
-        <h1 className="mq-h1">No practice yet</h1>
+        <h1 className="mq-h1">Nothing here yet</h1>
         <p className="mq-body" style={{ color: "var(--ink-faint)" }}>
-          Topics will appear here once admins publish them.
+          New practice quizzes are on the way — check back soon.
         </p>
       </div>
     );
@@ -72,30 +72,30 @@ export default function PracticeListPage() {
           marginTop: 8,
         }}
       >
-        {topics.map((t) => (
+        {quizzes.map((q) => (
           <Link
-            key={t.id}
-            href={`/practice/${t.slug}`}
+            key={q.id}
+            href={`/practice/${q.slug}`}
             style={{ textDecoration: "none", color: "inherit" }}
           >
             <MQCard
               style={{
                 padding: 14,
                 minHeight: 120,
-                background: `var(--${t.coverColor}, var(--primary))`,
+                background: `var(--${q.coverColor}, var(--primary))`,
                 color: "white",
               }}
             >
               <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>
-                {t.title}
+                {q.title}
               </div>
-              {t.description && (
+              {q.description && (
                 <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
-                  {t.description}
+                  {q.description}
                 </div>
               )}
               <Pill style={{ background: "rgba(255,255,255,0.25)", color: "white" }}>
-                {t.questionCount} qs
+                {q.questionCount} qs
               </Pill>
             </MQCard>
           </Link>

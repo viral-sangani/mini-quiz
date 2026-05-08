@@ -72,15 +72,21 @@ export default function DailyListPage() {
 
   return (
     <>
-      <TopBar
-        title="Daily quiz"
-        primaryAction={
-          <Link href="/daily/new" className="adm-btn adm-btn--primary">
-            <AdminIcon name="plus" size={14} color="white" /> New daily
-          </Link>
-        }
-      />
-      <div className="adm-main">
+      <TopBar title="Daily quiz" />
+      <div className="adm-content">
+        <div className="adm-page-h">
+          <div>
+            <h1>Daily quiz</h1>
+            <div className="adm-crumbs">
+              {upcoming.length} scheduled · {past.length} in history
+            </div>
+          </div>
+          <div className="actions">
+            <Link href="/daily/new" className="adm-btn adm-btn--primary">
+              <AdminIcon name="plus" size={14} color="white" /> New daily
+            </Link>
+          </div>
+        </div>
         {error && (
           <div className="adm-card" style={{ padding: 12, color: "var(--a-danger)" }}>
             {error}

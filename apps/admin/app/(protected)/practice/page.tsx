@@ -6,7 +6,7 @@ import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
 import { AdminIcon } from "@/components/AdminIcon";
 
-type AdminTopic = {
+type AdminQuiz = {
   id: string;
   slug: string;
   title: string;
@@ -20,17 +20,17 @@ type AdminTopic = {
 };
 
 export default function PracticeListPage() {
-  const [topics, setTopics] = useState<AdminTopic[]>([]);
+  const [quizzes, setQuizzes] = useState<AdminQuiz[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const data = await adminApi.get<{ topics: AdminTopic[] }>(
-        "/admin/practice/topics",
+      const data = await adminApi.get<{ quizzes: AdminQuiz[] }>(
+        "/admin/practice/quizzes",
       );
-      setTopics(data.topics);
+      setQuizzes(data.quizzes);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
@@ -43,10 +43,10 @@ export default function PracticeListPage() {
     void load();
   }, []);
 
-  const togglePublished = async (t: AdminTopic) => {
+  const togglePublished = async (q: AdminQuiz) => {
     try {
-      await adminApi.patch(`/admin/practice/topics/${t.id}`, {
-        published: !t.published,
+      await adminApi.patch(`/admin/practice/quizzes/${q.id}`, {
+        published: !q.published,
       });
       await load();
     } catch (e) {
@@ -54,34 +54,47 @@ export default function PracticeListPage() {
     }
   };
 
-  const remove = async (t: AdminTopic) => {
+  const remove = async (q: AdminQuiz) => {
     if (
       !confirm(
-        `Delete "${t.title}"? All ${t.questionCount} questions and ${t.headCount} player histories will be removed.`,
+        `Delete "${q.title}"? All ${q.questionCount} questions and ${q.headCount} player histories will be removed.`,
       )
     )
       return;
     try {
-      await adminApi.del(`/admin/practice/topics/${t.id}`);
+      await adminApi.del(`/admin/practice/quizzes/${q.id}`);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed");
     }
   };
 
+  const counts = {
+    published: quizzes.filter((q) => q.published).length,
+    drafts: quizzes.filter((q) => !q.published).length,
+  };
+
   return (
     <>
-      <TopBar
-        title="Practice"
-        primaryAction={
-          <Link href="/practice/new" className="adm-btn adm-btn--primary">
-            <AdminIcon name="plus" size={14} color="white" /> New topic
-          </Link>
-        }
-      />
-      <div className="adm-main">
+      <TopBar title="Practice" />
+      <div className="adm-content">
+        <div className="adm-page-h">
+          <div>
+            <h1>Practice</h1>
+            <div className="adm-crumbs">
+              {quizzes.length} total · {counts.published} published ·{" "}
+              {counts.drafts} draft
+            </div>
+          </div>
+          <div className="actions">
+            <Link href="/practice/new" className="adm-btn adm-btn--primary">
+              <AdminIcon name="plus" size={14} color="white" /> New quiz
+            </Link>
+          </div>
+        </div>
+
         {error && (
-          <div className="adm-card" style={{ padding: 12, color: "var(--a-danger)" }}>
+          <div className="adm-card" style={{ padding: 12, color: "var(--a-danger)", marginBottom: 16 }}>
             {error}
           </div>
         )}
@@ -92,17 +105,17 @@ export default function PracticeListPage() {
             gap: 12,
           }}
         >
-          {loading && topics.length === 0 ? (
+          {loading && quizzes.length === 0 ? (
             <div className="adm-card" style={{ padding: 18 }}>
               Loading…
             </div>
-          ) : topics.length === 0 ? (
+          ) : quizzes.length === 0 ? (
             <div className="adm-card" style={{ padding: 18, color: "var(--a-ink-faint)" }}>
-              No practice topics yet. Create your first one.
+              No practice quizzes yet. Create your first one.
             </div>
           ) : (
-            topics.map((t) => (
-              <div key={t.id} className="adm-card" style={{ padding: 14 }}>
+            quizzes.map((q) => (
+              <div key={q.id} className="adm-card" style={{ padding: 14 }}>
                 <div
                   style={{
                     display: "flex",
@@ -116,7 +129,7 @@ export default function PracticeListPage() {
                       width: 36,
                       height: 36,
                       borderRadius: 10,
-                      background: `var(--a-${t.coverColor}, var(--a-primary))`,
+                      background: `var(--a-${q.coverColor}, var(--a-primary))`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -124,12 +137,12 @@ export default function PracticeListPage() {
                       fontWeight: 800,
                     }}
                   >
-                    {t.title.slice(0, 1).toUpperCase()}
+                    {q.title.slice(0, 1).toUpperCase()}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{t.title}</div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{q.title}</div>
                     <div style={{ fontSize: 11, color: "var(--a-ink-faint)" }}>
-                      /{t.slug}
+                      /{q.slug}
                     </div>
                   </div>
                 </div>
@@ -142,15 +155,15 @@ export default function PracticeListPage() {
                     marginBottom: 12,
                   }}
                 >
-                  <span>{t.questionCount} questions</span>
-                  <span>{t.headCount} players</span>
-                  <span style={{ color: t.published ? "var(--a-success, #16a34a)" : "var(--a-ink-faint)", fontWeight: 700 }}>
-                    {t.published ? "Published" : "Draft"}
+                  <span>{q.questionCount} questions</span>
+                  <span>{q.headCount} players</span>
+                  <span style={{ color: q.published ? "var(--a-success, #16a34a)" : "var(--a-ink-faint)", fontWeight: 700 }}>
+                    {q.published ? "Published" : "Draft"}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <Link
-                    href={`/practice/${t.id}`}
+                    href={`/practice/${q.id}`}
                     className="adm-btn adm-btn--sm"
                   >
                     Edit
@@ -158,14 +171,14 @@ export default function PracticeListPage() {
                   <button
                     type="button"
                     className="adm-btn adm-btn--sm"
-                    onClick={() => void togglePublished(t)}
+                    onClick={() => void togglePublished(q)}
                   >
-                    {t.published ? "Unpublish" : "Publish"}
+                    {q.published ? "Unpublish" : "Publish"}
                   </button>
                   <button
                     type="button"
                     className="adm-btn adm-btn--sm adm-btn--danger"
-                    onClick={() => void remove(t)}
+                    onClick={() => void remove(q)}
                   >
                     Delete
                   </button>

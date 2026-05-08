@@ -15,14 +15,31 @@ export default function PracticeNewPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-suggest a slug from the title as the admin types, but only as long
+  // as the slug field hasn't been hand-edited. Saves the most common copy
+  // step on this form.
+  const [slugTouched, setSlugTouched] = useState(false);
+  const onTitleChange = (val: string) => {
+    setTitle(val);
+    if (!slugTouched) {
+      const auto = val
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40);
+      setSlug(auto);
+    }
+  };
+
   const submit = async () => {
     setError(null);
     if (!slug.trim()) return setError("Slug is required");
     if (!title.trim()) return setError("Title is required");
     setSubmitting(true);
     try {
-      const res = await adminApi.post<{ topic: { id: string } }>(
-        "/admin/practice/topics",
+      const res = await adminApi.post<{ quiz: { id: string } }>(
+        "/admin/practice/quizzes",
         {
           slug: slug.trim().toLowerCase(),
           title: title.trim(),
@@ -31,7 +48,7 @@ export default function PracticeNewPage() {
           published,
         },
       );
-      router.push(`/practice/${res.topic.id}`);
+      router.push(`/practice/${res.quiz.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Create failed");
     } finally {
@@ -41,36 +58,44 @@ export default function PracticeNewPage() {
 
   return (
     <>
-      <TopBar
-        title="New practice topic"
-        crumbs={<span>Practice › New</span>}
-        primaryAction={<span />}
-      />
-      <div className="adm-main">
+      <TopBar title="Practice" />
+      <div className="adm-content">
+        <div className="adm-page-h">
+          <div>
+            <h1>New practice quiz</h1>
+            <div className="adm-crumbs">Practice › New</div>
+          </div>
+        </div>
         <div className="adm-card" style={{ maxWidth: 540 }}>
           <div className="adm-card-h">
-            <h3>Topic details</h3>
+            <h3>Quiz details</h3>
           </div>
           <div style={{ padding: 18, display: "grid", gap: 12 }}>
-            <div className="adm-field">
-              <label>Slug</label>
-              <input
-                className="adm-input"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                placeholder="celo-basics"
-                disabled={submitting}
-              />
-            </div>
             <div className="adm-field">
               <label>Title</label>
               <input
                 className="adm-input"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => onTitleChange(e.target.value)}
                 placeholder="Celo basics"
                 disabled={submitting}
               />
+            </div>
+            <div className="adm-field">
+              <label>Slug</label>
+              <input
+                className="adm-input"
+                value={slug}
+                onChange={(e) => {
+                  setSlugTouched(true);
+                  setSlug(e.target.value);
+                }}
+                placeholder="celo-basics"
+                disabled={submitting}
+              />
+              <span style={{ fontSize: 11, color: "var(--a-ink-faint)" }}>
+                URL handle. Lowercase letters, numbers, hyphens.
+              </span>
             </div>
             <div className="adm-field">
               <label>Description</label>
@@ -135,7 +160,7 @@ export default function PracticeNewPage() {
               onClick={() => void submit()}
               disabled={submitting}
             >
-              {submitting ? "Creating…" : "Create topic"}
+              {submitting ? "Creating…" : "Create quiz"}
             </button>
           </div>
         </div>

@@ -20,7 +20,7 @@ type Question = {
   explanation: string | null;
   createdAt: string;
 };
-type TopicDetail = {
+type QuizDetail = {
   id: string;
   slug: string;
   title: string;
@@ -37,22 +37,24 @@ type TopicDetail = {
 
 const CHOICE_IDS = ["a", "b", "c", "d"];
 
-export default function PracticeTopicPage() {
+export default function PracticeQuizPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
-  const [detail, setDetail] = useState<TopicDetail | null>(null);
+  const [detail, setDetail] = useState<QuizDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [pending, setPending] = useState<AIQuestion[] | null>(null);
   const [savingPending, setSavingPending] = useState(false);
 
-  // Local edits to topic header
+  // Local edits to quiz header
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
   const load = async () => {
     try {
-      const data = await adminApi.get<TopicDetail>(`/admin/practice/topics/${id}`);
+      const data = await adminApi.get<QuizDetail>(
+        `/admin/practice/quizzes/${id}`,
+      );
       setDetail(data);
       setTitle(data.title);
       setDescription(data.description ?? "");
@@ -69,7 +71,7 @@ export default function PracticeTopicPage() {
 
   const saveHeader = async () => {
     try {
-      await adminApi.patch(`/admin/practice/topics/${id}`, {
+      await adminApi.patch(`/admin/practice/quizzes/${id}`, {
         title: title.trim(),
         description: description.trim() || null,
       });
@@ -79,9 +81,9 @@ export default function PracticeTopicPage() {
     }
   };
 
-  // Practice topic page already has its own title/description, so we only
-  // need the questions array. The context arg is unused here but matches the
-  // shared dialog signature.
+  // Practice quiz page already has its own title/description, so we only
+  // need the questions array. The context arg is unused here but matches
+  // the shared dialog signature.
   const onAIGenerated = (qs: AIQuestion[]) => {
     setAiOpen(false);
     setPending(qs);
@@ -95,9 +97,9 @@ export default function PracticeTopicPage() {
       const normalized = pending.map((q) => {
         const remap = new Map<string, string>();
         const choices = q.choices.slice(0, 4).map((c, i) => {
-          const id = CHOICE_IDS[i]!;
-          remap.set(c.id, id);
-          return { id, label: c.label };
+          const cid = CHOICE_IDS[i]!;
+          remap.set(c.id, cid);
+          return { id: cid, label: c.label };
         });
         return {
           prompt: q.prompt,
@@ -106,7 +108,7 @@ export default function PracticeTopicPage() {
           explanation: q.explanation ?? null,
         };
       });
-      await adminApi.post(`/admin/practice/topics/${id}/questions`, {
+      await adminApi.post(`/admin/practice/quizzes/${id}/questions`, {
         questions: normalized,
       });
       setPending(null);
@@ -131,8 +133,8 @@ export default function PracticeTopicPage() {
   if (error) {
     return (
       <>
-        <TopBar title="Practice" primaryAction={<span />} />
-        <div className="adm-main">
+        <TopBar title="Practice" />
+        <div className="adm-content">
           <div className="adm-card" style={{ padding: 12, color: "var(--a-danger)" }}>
             {error}
           </div>
@@ -143,8 +145,8 @@ export default function PracticeTopicPage() {
   if (!detail) {
     return (
       <>
-        <TopBar title="Practice" primaryAction={<span />} />
-        <div className="adm-main">
+        <TopBar title="Practice" />
+        <div className="adm-content">
           <div className="adm-card" style={{ padding: 18 }}>
             Loading…
           </div>
@@ -155,29 +157,32 @@ export default function PracticeTopicPage() {
 
   return (
     <>
-      <TopBar
-        title={detail.title}
-        crumbs={
-          <span>
-            <Link href="/practice">Practice</Link> › {detail.slug}
-          </span>
-        }
-        primaryAction={
-          <button
-            type="button"
-            className="adm-btn adm-btn--primary"
-            onClick={() => setAiOpen(true)}
-          >
-            <AdminIcon name="plus" size={14} color="white" /> Generate with AI
-          </button>
-        }
-      />
-      <div className="adm-main">
+      <TopBar title="Practice" />
+      <div className="adm-content">
+        <div className="adm-page-h">
+          <div>
+            <h1>{detail.title}</h1>
+            <div className="adm-crumbs">
+              <Link href="/practice">Practice</Link> › {detail.slug} ·{" "}
+              {detail.questionCount} questions · {detail.headCount} players
+            </div>
+          </div>
+          <div className="actions">
+            <button
+              type="button"
+              className="adm-btn adm-btn--primary"
+              onClick={() => setAiOpen(true)}
+            >
+              <AdminIcon name="plus" size={14} color="white" /> Generate with AI
+            </button>
+          </div>
+        </div>
+
         <div className="adm-card">
           <div className="adm-card-h">
-            <h3>Topic</h3>
+            <h3>Quiz</h3>
             <span style={{ color: "var(--a-ink-faint)", fontSize: 12 }}>
-              {detail.questionCount} questions · {detail.headCount} players
+              {detail.published ? "Published" : "Draft"}
             </span>
           </div>
           <div style={{ padding: 18, display: "grid", gap: 10 }}>
