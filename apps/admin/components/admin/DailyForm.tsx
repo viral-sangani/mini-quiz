@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-api";
 import { AdminIcon } from "@/components/AdminIcon";
-import { AIQuestionGeneratorDialog, type AIQuestion } from "./AIQuestionGeneratorDialog";
+import {
+  AIQuestionGeneratorDialog,
+  type AIGenerationContext,
+  type AIQuestion,
+} from "./AIQuestionGeneratorDialog";
 
 export type DailyQuestion = {
   prompt: string;
@@ -78,7 +82,7 @@ export function DailyForm({
     );
   };
 
-  const onAIGenerated = (incoming: AIQuestion[]) => {
+  const onAIGenerated = (incoming: AIQuestion[], ctx: AIGenerationContext) => {
     setAiOpen(false);
     // Take up to 10, normalize choice IDs to a/b/c/d so they line up with our
     // schema. AI may return 'a','b','c','d' already, but normalize defensively.
@@ -95,6 +99,16 @@ export function DailyForm({
     // Pad with blanks if fewer than 10 returned.
     while (normalized.length < 10) normalized.push(blankQuestion());
     setQuestions(normalized);
+    // Default-fill title + description from the AI topic if admin left them
+    // blank — saves a copy/paste step. If they already typed something, leave
+    // it. Mirror the formatting of the topic for the title (capitalize first
+    // letter), keep description short.
+    const topicTitle =
+      ctx.topic.charAt(0).toUpperCase() + ctx.topic.slice(1);
+    if (!title.trim()) setTitle(topicTitle);
+    if (!description.trim()) {
+      setDescription(`${ctx.count} ${ctx.difficulty.toLowerCase()} questions on ${ctx.topic}.`);
+    }
   };
 
   const submit = async () => {
@@ -206,11 +220,11 @@ export function DailyForm({
                 disabled={submitting || !!lockedToEdit}
               />
             </div>
-            <div style={{ display: "grid", gap: 6 }}>
+            <div style={{ display: "grid", gap: 8 }}>
               {q.choices.map((c, ci) => (
                 <div
                   key={c.id}
-                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  style={{ display: "flex", alignItems: "center", gap: 10 }}
                 >
                   <input
                     type="radio"
@@ -218,19 +232,23 @@ export function DailyForm({
                     checked={q.correctChoiceId === c.id}
                     onChange={() => updateQuestion(qi, { correctChoiceId: c.id })}
                     disabled={submitting || !!lockedToEdit}
+                    style={{ flex: "0 0 auto" }}
                   />
                   <span
                     style={{
-                      width: 18,
+                      width: 16,
+                      flex: "0 0 16px",
                       fontWeight: 700,
                       fontSize: 12,
                       color: "var(--a-ink-faint)",
+                      textAlign: "center",
                     }}
                   >
                     {c.id.toUpperCase()}
                   </span>
                   <input
                     className="adm-input"
+                    style={{ flex: 1 }}
                     value={c.label}
                     onChange={(e) => updateChoice(qi, ci, e.target.value)}
                     disabled={submitting || !!lockedToEdit}

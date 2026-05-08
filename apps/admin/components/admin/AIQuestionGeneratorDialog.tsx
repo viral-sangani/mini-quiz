@@ -11,12 +11,21 @@ export type AIQuestion = {
   explanation?: string;
 };
 
+// Context attached to the AI generation result so the parent can default
+// other fields (title, description) from the topic the admin typed.
+export type AIGenerationContext = {
+  topic: string;
+  count: number;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  withExplanations: boolean;
+};
+
 type Props = {
   open: boolean;
   defaultCount?: number;
   defaultWithExplanations?: boolean;
   onCancel: () => void;
-  onGenerated: (questions: AIQuestion[]) => void;
+  onGenerated: (questions: AIQuestion[], context: AIGenerationContext) => void;
 };
 
 // Reusable modal that posts to /admin/ai/generate-questions and hands back
@@ -76,7 +85,12 @@ export function AIQuestionGeneratorDialog({
           withExplanations,
         },
       );
-      onGenerated(res.questions);
+      onGenerated(res.questions, {
+        topic: topic.trim(),
+        count,
+        difficulty,
+        withExplanations,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
     } finally {

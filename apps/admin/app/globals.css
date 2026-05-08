@@ -155,9 +155,13 @@ body {
     gap: 8px;
   }
 
-  /* Buttons */
+  /* Buttons.
+   * `justify-center` centers the icon+label group inside the button so
+   * action-row clusters (Edit/Delete, View/Reset) line up regardless of
+   * label length. `min-width` keeps short single-word buttons (Del, Edit)
+   * from collapsing thinner than their siblings. */
   .adm-btn {
-    @apply inline-flex items-center rounded-md;
+    @apply inline-flex items-center justify-center rounded-md;
     height: 34px;
     padding: 0 14px;
     border: 1px solid var(--a-line);
@@ -165,8 +169,12 @@ body {
     color: var(--a-ink);
     font-weight: 700;
     font-size: 13px;
+    line-height: 1;
     gap: 6px;
+    min-width: 80px;
     cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
   }
   .adm-btn:disabled {
     opacity: 0.5;
@@ -187,8 +195,9 @@ body {
   }
   .adm-btn--sm {
     height: 28px;
-    padding: 0 10px;
+    padding: 0 12px;
     font-size: 12px;
+    min-width: 64px;
   }
 
   /* KPI cards */

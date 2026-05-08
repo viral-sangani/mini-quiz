@@ -79,6 +79,9 @@ export default function PracticeTopicPage() {
     }
   };
 
+  // Practice topic page already has its own title/description, so we only
+  // need the questions array. The context arg is unused here but matches the
+  // shared dialog signature.
   const onAIGenerated = (qs: AIQuestion[]) => {
     setAiOpen(false);
     setPending(qs);

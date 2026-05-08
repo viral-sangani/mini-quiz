@@ -153,7 +153,7 @@ export default function DailyListPage() {
                             className="adm-btn adm-btn--sm adm-btn--danger"
                             onClick={() => void remove(cell.row!.id, cell.row!.title)}
                           >
-                            Del
+                            Delete
                           </button>
                         )}
                       </div>
