@@ -291,6 +291,7 @@ export function DailyForm({
 
       <AIQuestionGeneratorDialog
         open={aiOpen}
+        mode="daily"
         defaultCount={10}
         defaultWithExplanations={false}
         onCancel={() => setAiOpen(false)}

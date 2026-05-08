@@ -432,6 +432,7 @@ export default function PracticeQuizPage() {
 
         <AIQuestionGeneratorDialog
           open={aiOpen}
+          mode="practice"
           defaultCount={10}
           defaultWithExplanations={true}
           onCancel={() => setAiOpen(false)}

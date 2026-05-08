@@ -270,3 +270,137 @@ export async function generateQuestions(
   }
   throw lastErr instanceof Error ? lastErr : new Error("AI generation failed");
 }
+
+// ---------------------------------------------------------------------------
+// Topic suggestions
+// ---------------------------------------------------------------------------
+//
+// `suggestTopics` returns a small list of quiz topics tailored to one of
+// three "modes" (live / daily / practice). The admin UI presents these as
+// clickable chips next to the topic input on the question generator. An
+// optional `seed` lets the admin steer ("web3 fundamentals", "history of
+// India") — empty seed produces broadly engaging picks.
+//
+// Design intentionally mirrors generateQuestions: same direct fetch +
+// json_object response + 90s timeout + retry-once on empty/invalid.
+
+export type SuggestMode = "live" | "daily" | "practice";
+
+export type SuggestedTopic = {
+  title: string;
+  description: string;
+};
+
+export type SuggestTopicsOptions = {
+  count: number;
+  seed?: string;
+  mode: SuggestMode;
+};
+
+const topicItemSchema = z.object({
+  title: z.string().min(2).max(80),
+  description: z.string().max(160),
+});
+const topicEnvelopeSchema = z.object({
+  topics: z.array(topicItemSchema).min(1).max(20),
+});
+
+function buildTopicSystemPrompt(): string {
+  return [
+    "You are a quiz topic suggester.",
+    "Reply with ONLY a single valid JSON object — no markdown fences, no prose, no code blocks.",
+    "The JSON object MUST match this exact shape:",
+    `{"topics":[{"title":"...","description":"..."}, ...]}`,
+    "Constraints:",
+    "- Each title is a punchy quiz-topic name (2-6 words).",
+    "- Each description is one short sentence (under 160 chars) explaining what the topic covers.",
+    "- Topics must be DISTINCT from each other; avoid near-duplicates.",
+    "- Keep titles SFW, broadly recognizable, and unambiguous.",
+  ].join("\n");
+}
+
+function buildTopicUserPrompt(opts: SuggestTopicsOptions): string {
+  const flavour: Record<SuggestMode, string> = {
+    live:
+      "engaging multiplayer trivia that works well for a live event with prizes — broadly recognizable, fun, fast",
+    daily:
+      "broadly engaging general-knowledge trivia for a wide daily-quiz audience — accessible, varied, fun",
+    practice:
+      "educational, learning-oriented topics suitable for solo practice — concrete subjects players can study and improve at",
+  };
+  const lines = [
+    `Suggest ${opts.count} quiz topics for ${flavour[opts.mode]}.`,
+  ];
+  if (opts.seed && opts.seed.trim()) {
+    lines.push(`Theme / seed: ${opts.seed.trim()}.`);
+  } else {
+    lines.push("No theme — pick widely interesting topics across genres.");
+  }
+  lines.push("");
+  lines.push("Reply with the JSON object only.");
+  return lines.join("\n");
+}
+
+async function attemptTopicSuggestion(
+  opts: SuggestTopicsOptions,
+): Promise<SuggestedTopic[]> {
+  const maxTokens = Math.min(2_000, 200 + opts.count * 80);
+  const ac = new AbortController();
+  const TIMEOUT_MS = 60_000;
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+
+  let text = "";
+  try {
+    const res = await callMoonshot({
+      systemPrompt: buildTopicSystemPrompt(),
+      userPrompt: buildTopicUserPrompt(opts),
+      maxTokens,
+      abortSignal: ac.signal,
+    });
+    text = res.text;
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new Error(`Moonshot call timed out after ${TIMEOUT_MS}ms`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!text.trim()) throw new Error("Model returned empty response");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(extractJsonBlock(text));
+  } catch (e) {
+    throw new Error(
+      `Topic suggestion was not valid JSON: ${
+        e instanceof Error ? e.message : "unknown"
+      }`,
+    );
+  }
+  const safe = topicEnvelopeSchema.safeParse(parsed);
+  if (!safe.success) {
+    throw new Error(`Topic response failed schema check: ${safe.error.message}`);
+  }
+  return safe.data.topics.slice(0, opts.count);
+}
+
+export async function suggestTopics(
+  opts: SuggestTopicsOptions,
+): Promise<SuggestedTopic[]> {
+  if (opts.count < 1 || opts.count > 12) {
+    throw new Error("count must be between 1 and 12");
+  }
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      return await attemptTopicSuggestion(opts);
+    } catch (e) {
+      lastErr = e;
+      if (e instanceof AiGenerationDisabledError) throw e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("count must be between")) throw e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("AI suggestion failed");
+}

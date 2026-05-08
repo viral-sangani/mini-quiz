@@ -13,6 +13,11 @@ import { isoUtcToLocalDatetimeInput, localDatetimeInputToIsoUtc } from "@/lib/ti
 import { AdminIcon } from "@/components/AdminIcon";
 import { adminApi } from "@/lib/admin-api";
 import { DepositPanel } from "./DepositPanel";
+import {
+  AIQuestionGeneratorDialog,
+  type AIGenerationContext,
+  type AIQuestion,
+} from "./AIQuestionGeneratorDialog";
 
 export type QuizFormValue = {
   title: string;
@@ -43,6 +48,9 @@ export type QuizFormSubmit = {
 };
 
 const DIFFICULTIES: Difficulty[] = ["EASY", "MEDIUM", "HARD"];
+const TABS = ["basics", "questions", "prizes", "review"] as const;
+type QuizFormTab = (typeof TABS)[number];
+const CHOICE_IDS = ["a", "b", "c", "d"] as const;
 
 function defaultValue(): QuizFormValue {
   return {
@@ -113,13 +121,44 @@ export function QuizForm({
   onSubmit: (v: QuizFormSubmit) => Promise<void>;
 }) {
   const [v, setV] = useState<QuizFormValue>(initial ?? defaultValue());
-  const [tab, setTab] = useState<"basics" | "questions" | "prizes" | "review">(
-    "basics",
-  );
+  const [tab, setTab] = useState<QuizFormTab>("basics");
+  const [aiOpen, setAiOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const patch = (p: Partial<QuizFormValue>) => setV((prev) => ({ ...prev, ...p }));
+  const tabIndex = TABS.indexOf(tab);
+  const goBack = () => setTab(TABS[Math.max(0, tabIndex - 1)]!);
+  const goNext = () => setTab(TABS[Math.min(TABS.length - 1, tabIndex + 1)]!);
+
+  const onAIGenerated = (incoming: AIQuestion[], ctx: AIGenerationContext) => {
+    const normalized = incoming.map((q) => {
+      const remap = new Map<string, string>();
+      const choices = q.choices.slice(0, 4).map((c, i) => {
+        const id = CHOICE_IDS[i]!;
+        remap.set(c.id, id);
+        return { id, label: c.label };
+      });
+      while (choices.length < 4) {
+        const id = CHOICE_IDS[choices.length]!;
+        choices.push({ id, label: "" });
+      }
+      const correctChoiceId = remap.get(q.correctChoiceId) ?? choices[0]?.id ?? "a";
+      return { prompt: q.prompt, choices, correctChoiceId };
+    });
+    patch({
+      questions: normalized.length > 0 ? normalized : [blankQuestion()],
+      difficulty: ctx.difficulty,
+      title: v.title.trim()
+        ? v.title
+        : ctx.topic.charAt(0).toUpperCase() + ctx.topic.slice(1),
+      description: v.description.trim()
+        ? v.description
+        : `${ctx.count} ${ctx.difficulty.toLowerCase()} questions on ${ctx.topic}.`,
+    });
+    setAiOpen(false);
+    setTab("questions");
+  };
 
   const update = async () => {
     setError(null);
@@ -188,7 +227,7 @@ export function QuizForm({
   return (
     <>
       <div className="adm-tabs">
-        {(["basics", "questions", "prizes", "review"] as const).map((id, i) => (
+        {TABS.map((id, i) => (
           <button
             key={id}
             type="button"
@@ -199,6 +238,26 @@ export function QuizForm({
           </button>
         ))}
         <div style={{ flex: 1 }} />
+        {tabIndex > 0 && (
+          <button
+            type="button"
+            onClick={goBack}
+            className="adm-btn"
+            style={{ marginBottom: 8 }}
+          >
+            Back
+          </button>
+        )}
+        {tabIndex < TABS.length - 1 && (
+          <button
+            type="button"
+            onClick={goNext}
+            className="adm-btn"
+            style={{ marginBottom: 8 }}
+          >
+            Next
+          </button>
+        )}
         <button
           type="button"
           onClick={update}
@@ -341,15 +400,24 @@ export function QuizForm({
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div className="flex items-center justify-between">
                 <div className="adm-h3">Questions ({v.questions.length})</div>
-                <button
-                  type="button"
-                  className="adm-btn adm-btn--sm"
-                  onClick={() =>
-                    patch({ questions: [...v.questions, blankQuestion()] })
-                  }
-                >
-                  <AdminIcon name="plus" size={12} /> Add question
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="adm-btn adm-btn--sm"
+                    onClick={() => setAiOpen(true)}
+                  >
+                    Generate with AI
+                  </button>
+                  <button
+                    type="button"
+                    className="adm-btn adm-btn--sm"
+                    onClick={() =>
+                      patch({ questions: [...v.questions, blankQuestion()] })
+                    }
+                  >
+                    <AdminIcon name="plus" size={12} /> Add question
+                  </button>
+                </div>
               </div>
 
               {v.questions.map((q, qi) => (
@@ -579,6 +647,15 @@ export function QuizForm({
 
         <PreviewCard v={v} totalPool={totalPool} />
       </div>
+
+      <AIQuestionGeneratorDialog
+        open={aiOpen}
+        mode="live"
+        defaultCount={10}
+        defaultWithExplanations={false}
+        onCancel={() => setAiOpen(false)}
+        onGenerated={onAIGenerated}
+      />
     </>
   );
 }

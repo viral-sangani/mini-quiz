@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-07** (admin no longer touches DB).
+> Last updated: **2026-05-08** (admin AI topic suggestions).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -58,6 +58,7 @@
   - `payouts.admin.ts` — payout ledger + retry on FAILED.
   - `users.admin.ts` — user list + flag/unflag.
   - `admin-stats.admin.ts` — dashboard KPIs.
+  - `ai-gen.admin.ts` — admin-only AI topic suggestions + question generation.
 - Services (`apps/api/src/services/`): business logic, called by routes.
 - **Stateful runtime singletons** (these are why the API can't be
   serverless and can't horizontally scale today):
@@ -83,8 +84,11 @@
   `ADMIN_EMAILS`. JWT carries `sub: <email>`, `role: ADMIN|USER`.
 - All page data flows through the api over HTTPS (`adminApi` in
   `lib/admin-api.ts`). Admin app does not touch Postgres directly.
-- Pages: `/overview`, `/quizzes`, `/quizzes/[id]/live`, `/players`,
-  `/payouts`, `/payouts/[id]`.
+- Pages: `/overview`, `/quizzes`, `/quizzes/[id]/live`, `/daily`,
+  `/practice`, `/players`, `/payouts`, `/payouts/[id]`.
+- Quiz creation flows for live, daily, and practice can ask AI for topic
+  suggestions, or use a manually typed topic, then generate editable
+  multiple-choice questions via the API.
 - Live monitor uses the same SSE event stream as players, plus an
   admin-only `answer_distribution` event for the per-question vote
   histogram.
@@ -134,13 +138,15 @@ read the schema. Key relationships at a glance:
 
 1. Admin signs in via NextAuth (Google or email).
 2. `apps/admin` mints a backend JWT signed with `NEXTAUTH_SECRET`.
-3. `POST /admin/quizzes` with body, including `prizeAmounts`.
-4. Quiz lands at `DRAFT`. Admin transitions to `SCHEDULED` with
+3. Optional: admin uses `POST /admin/ai/suggest-topics`, then
+   `POST /admin/ai/generate-questions` to seed editable questions.
+4. `POST /admin/quizzes` with body, including `prizeAmounts`.
+5. Quiz lands at `DRAFT`. Admin transitions to `SCHEDULED` with
    `scheduledStart`.
-5. Scheduler picks it up at the start time → LIVE.
-6. Admin can `POST /admin/quizzes/:id/end` to manually end early
+6. Scheduler picks it up at the start time → LIVE.
+7. Admin can `POST /admin/quizzes/:id/end` to manually end early
    (also auto-payouts).
-7. Admin live-monitor page consumes SSE for real-time KPIs +
+8. Admin live-monitor page consumes SSE for real-time KPIs +
    answer distribution.
 
 ### Auto-payout (LIVE → ENDED)

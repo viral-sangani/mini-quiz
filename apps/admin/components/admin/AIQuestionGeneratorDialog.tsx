@@ -10,6 +10,11 @@ export type AIQuestion = {
   correctChoiceId: string;
   explanation?: string;
 };
+export type AIMode = "live" | "daily" | "practice";
+export type AISuggestedTopic = {
+  title: string;
+  description: string;
+};
 
 // Context attached to the AI generation result so the parent can default
 // other fields (title, description) from the topic the admin typed.
@@ -22,6 +27,7 @@ export type AIGenerationContext = {
 
 type Props = {
   open: boolean;
+  mode: AIMode;
   defaultCount?: number;
   defaultWithExplanations?: boolean;
   onCancel: () => void;
@@ -34,6 +40,7 @@ type Props = {
 // question editor; for practice we show a review screen and bulk-save.
 export function AIQuestionGeneratorDialog({
   open,
+  mode,
   defaultCount = 10,
   defaultWithExplanations = true,
   onCancel,
@@ -46,6 +53,8 @@ export function AIQuestionGeneratorDialog({
   const [language, setLanguage] = useState("English");
   const [withExplanations, setWithExplanations] = useState(defaultWithExplanations);
   const [notes, setNotes] = useState("");
+  const [topics, setTopics] = useState<AISuggestedTopic[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,12 +67,34 @@ export function AIQuestionGeneratorDialog({
       setLanguage("English");
       setWithExplanations(defaultWithExplanations);
       setNotes("");
+      setTopics([]);
+      setSuggesting(false);
       setSubmitting(false);
       setError(null);
     }
   }, [open, defaultCount, defaultWithExplanations]);
 
   if (!open) return null;
+
+  const suggest = async () => {
+    setSuggesting(true);
+    setError(null);
+    try {
+      const res = await adminApi.post<{ topics: AISuggestedTopic[] }>(
+        "/admin/ai/suggest-topics",
+        {
+          mode,
+          count: 6,
+          seed: topic.trim() || undefined,
+        },
+      );
+      setTopics(res.topics);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Topic suggestion failed");
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const submit = async () => {
     if (!topic.trim()) {
@@ -124,14 +155,86 @@ export function AIQuestionGeneratorDialog({
         <div style={{ padding: 18, display: "grid", gap: 12 }}>
           <div className="adm-field">
             <label>Topic</label>
-            <input
-              className="adm-input"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g. Celo basics, World capitals, JavaScript closures"
-              disabled={submitting}
-            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                className="adm-input"
+                style={{ flex: 1 }}
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g. Celo basics, World capitals, JavaScript closures"
+                disabled={submitting || suggesting}
+              />
+              <button
+                type="button"
+                className="adm-btn"
+                onClick={() => void suggest()}
+                disabled={submitting || suggesting}
+                style={{ minWidth: 124 }}
+              >
+                {suggesting ? "Suggesting..." : "Suggest topics"}
+              </button>
+            </div>
+            <span style={{ fontSize: 11, color: "var(--a-ink-faint)" }}>
+              Type a topic, or type a theme first and ask AI for ideas.
+            </span>
           </div>
+          {topics.length > 0 && (
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                border: "1px solid var(--a-line)",
+                background: "var(--a-bg)",
+                borderRadius: 8,
+                padding: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: "var(--a-ink-soft)",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                Suggested topics
+              </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                {topics.map((t) => (
+                  <button
+                    key={`${t.title}-${t.description}`}
+                    type="button"
+                    className="adm-chip"
+                    onClick={() => setTopic(t.title)}
+                    disabled={submitting || suggesting}
+                    style={{
+                      height: "auto",
+                      minHeight: 44,
+                      textAlign: "left",
+                      display: "block",
+                      whiteSpace: "normal",
+                      lineHeight: 1.35,
+                      padding: "8px 10px",
+                    }}
+                  >
+                    <span style={{ display: "block", color: "var(--a-ink)", fontWeight: 800 }}>
+                      {t.title}
+                    </span>
+                    <span
+                      style={{
+                        display: "block",
+                        color: "var(--a-ink-soft)",
+                        fontWeight: 600,
+                        marginTop: 2,
+                      }}
+                    >
+                      {t.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
             <div className="adm-field">
               <label>Difficulty</label>
@@ -250,7 +353,7 @@ export function AIQuestionGeneratorDialog({
             type="button"
             className="adm-btn adm-btn--primary"
             onClick={() => void submit()}
-            disabled={submitting || !topic.trim()}
+            disabled={submitting || suggesting || !topic.trim()}
           >
             {submitting ? "Generating…" : "Generate"}
           </button>
