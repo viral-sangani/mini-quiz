@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mini-quiz-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: miniquiz
+      POSTGRES_PASSWORD: miniquiz
+      POSTGRES_DB: miniquiz
+    ports:
+      - "5432:5432"
+    volumes:
+      - mini-quiz-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "miniquiz", "-d", "miniquiz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mini-quiz-pgdata:
