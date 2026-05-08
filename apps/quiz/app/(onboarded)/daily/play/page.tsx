@@ -295,7 +295,7 @@ export default function DailyPlayPage() {
                 type="button"
                 disabled={isLocked}
                 onClick={() => void submit(q, c.id)}
-                className="mq-choice"
+                className="mq-choice mq-press"
                 style={{
                   padding: 14,
                   borderRadius: 14,

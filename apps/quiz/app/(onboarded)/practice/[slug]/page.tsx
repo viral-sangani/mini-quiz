@@ -46,6 +46,10 @@ export default function PracticePlayPage() {
   const [error, setError] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
   const [picking, setPicking] = useState(false);
+  // Picked tile while we're awaiting the server response. Drives the
+  // optimistic "locked-in" visual so the user sees feedback immediately
+  // on tap even before the network round-trip completes.
+  const [pickedChoiceId, setPickedChoiceId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<AnswerResp | null>(null);
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [finish, setFinish] = useState<FinishResp | null>(null);
@@ -70,8 +74,17 @@ export default function PracticePlayPage() {
   }, [wallet, slug]);
 
   const submit = async (q: Question, choiceId: string) => {
-    if (!wallet || picking || !start) return;
+    if (!wallet || picking || !start || pickedChoiceId) return;
+    // Lock picked tile + dim siblings IMMEDIATELY (zero-latency feedback).
     setPicking(true);
+    setPickedChoiceId(choiceId);
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate(15);
+      } catch {
+        // ignore
+      }
+    }
     try {
       const res = await api.post<AnswerResp>("/practice/answer", {
         walletAddress: wallet,
@@ -108,6 +121,7 @@ export default function PracticePlayPage() {
     } else {
       setIdx((i) => i + 1);
       setFeedback(null);
+      setPickedChoiceId(null);
     }
   };
 
@@ -203,42 +217,85 @@ export default function PracticePlayPage() {
         </h2>
         <div style={{ display: "grid", gap: 8 }}>
           {q.choices.map((c) => {
-            const isCorrect = feedback && feedback.correctChoiceId === c.id;
-            const wasPicked = feedback && !isCorrect;
+            // Three states drive the visual:
+            //   - resolved + correct answer  → green
+            //   - resolved + this was the user's wrong pick → red
+            //   - locked but not resolved → primary blue (optimistic)
+            //   - default → neutral
+            const isResolved = feedback != null;
+            const isCorrectAnswer =
+              isResolved && feedback!.correctChoiceId === c.id;
+            const isWrongPick =
+              isResolved &&
+              !feedback!.isCorrect &&
+              pickedChoiceId === c.id;
+            const isLocked = pickedChoiceId !== null;
+            const isPickedOptimistic =
+              isLocked && !isResolved && pickedChoiceId === c.id;
+
+            let border = "1px solid var(--ink-faint)";
+            let bg = "var(--surface-1, white)";
+            let opacity = 1;
+            if (isCorrectAnswer) {
+              border = "2px solid var(--good, #16a34a)";
+              bg = "var(--good-bg, #d1fae5)";
+            } else if (isWrongPick) {
+              border = "2px solid var(--wrong, #ef4444)";
+              bg = "var(--wrong-bg, #fee2e2)";
+            } else if (isPickedOptimistic) {
+              border = "2px solid var(--primary)";
+              bg = "var(--primary-bg, #dbeafe)";
+            } else if (isLocked || isResolved) {
+              opacity = 0.5;
+            }
+
             return (
               <button
                 key={c.id}
                 type="button"
-                disabled={picking || feedback != null}
+                disabled={isLocked}
                 onClick={() => void submit(q, c.id)}
+                className="mq-press"
                 style={{
                   padding: 14,
                   borderRadius: 14,
-                  border: `1px solid ${
-                    isCorrect ? "var(--good, #16a34a)" : "var(--ink-faint)"
-                  }`,
-                  background: isCorrect
-                    ? "var(--good-bg, #d1fae5)"
-                    : wasPicked
-                      ? "var(--surface-2, rgba(0,0,0,0.04))"
-                      : "var(--surface-1, white)",
+                  border,
+                  background: bg,
                   textAlign: "left",
                   fontWeight: 600,
                   fontSize: 15,
-                  opacity: feedback && !isCorrect ? 0.7 : 1,
-                  cursor: picking ? "wait" : "pointer",
+                  opacity,
+                  cursor: isLocked ? "default" : "pointer",
+                  transform: isPickedOptimistic ? "translateY(1px)" : undefined,
+                  transition: "background 120ms ease, border-color 120ms ease",
                 }}
               >
                 <span
                   style={{
                     fontWeight: 800,
                     marginRight: 8,
-                    color: "var(--primary)",
+                    color: isCorrectAnswer
+                      ? "var(--good, #16a34a)"
+                      : isWrongPick
+                        ? "var(--wrong, #ef4444)"
+                        : "var(--primary)",
                   }}
                 >
                   {c.id.toUpperCase()}.
                 </span>
                 {c.label}
+                {isPickedOptimistic && (
+                  <span
+                    style={{
+                      float: "right",
+                      fontSize: 12,
+                      color: "var(--primary)",
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓ locked in
+                  </span>
+                )}
               </button>
             );
           })}

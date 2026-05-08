@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
 import { AdminIcon } from "@/components/AdminIcon";
+import { Crumbs } from "@/components/Crumbs";
+import { useToast } from "@/components/Toast";
 import { QuizStatusPill } from "@/components/StatusPill";
 import type { QuizStatus } from "@mini-quiz/shared";
 
@@ -24,6 +26,7 @@ export default function DailyListPage() {
   const [past, setPast] = useState<DailyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -64,9 +67,12 @@ export default function DailyListPage() {
     if (!confirm(`Delete daily quiz "${label}"? This cannot be undone.`)) return;
     try {
       await adminApi.del(`/admin/daily/${id}`);
+      toast.success(`Deleted "${label}"`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      const msg = e instanceof Error ? e.message : "Delete failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -74,7 +80,13 @@ export default function DailyListPage() {
     <>
       <TopBar title="Daily quiz" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Daily" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>Daily quiz</h1>
             <div className="adm-crumbs">

@@ -28,7 +28,10 @@ export type IconName =
   | "chevron-right"
   | "plus"
   | "share"
-  | "refresh";
+  | "refresh"
+  | "calendar"
+  | "compass"
+  | "book";
 
 export function Icon({
   name,
@@ -228,6 +231,28 @@ export function Icon({
         <svg {...props}>
           <path d="M21 4v6h-6M3 20v-6h6" />
           <path d="M20 9a8 8 0 0 0-14-3l-3 3M4 15a8 8 0 0 0 14 3l3-3" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg {...props}>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M3 9h18M8 3v4M16 3v4" />
+          <path d="M8 13h2v2H8zM14 13h2v2h-2zM8 17h2v2H8zM14 17h2v2h-2z" fill={color} stroke="none" />
+        </svg>
+      );
+    case "compass":
+      return (
+        <svg {...props}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M15.5 8.5l-2 5-5 2 2-5z" fill={color} stroke="none" />
+        </svg>
+      );
+    case "book":
+      return (
+        <svg {...props}>
+          <path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4z" />
+          <path d="M20 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z" />
         </svg>
       );
   }

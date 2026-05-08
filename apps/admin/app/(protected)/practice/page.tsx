@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
 import { AdminIcon } from "@/components/AdminIcon";
+import { Crumbs } from "@/components/Crumbs";
+import { useToast } from "@/components/Toast";
 
 type AdminQuiz = {
   id: string;
@@ -23,6 +25,7 @@ export default function PracticeListPage() {
   const [quizzes, setQuizzes] = useState<AdminQuiz[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -48,9 +51,13 @@ export default function PracticeListPage() {
       await adminApi.patch(`/admin/practice/quizzes/${q.id}`, {
         published: !q.published,
       });
+      toast.success(
+        q.published ? `"${q.title}" unpublished` : `"${q.title}" is live`,
+      );
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Update failed");
+      const msg = e instanceof Error ? e.message : "Update failed";
+      toast.error(msg);
     }
   };
 
@@ -63,9 +70,11 @@ export default function PracticeListPage() {
       return;
     try {
       await adminApi.del(`/admin/practice/quizzes/${q.id}`);
+      toast.success(`Deleted "${q.title}"`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      const msg = e instanceof Error ? e.message : "Delete failed";
+      toast.error(msg);
     }
   };
 
@@ -78,7 +87,13 @@ export default function PracticeListPage() {
     <>
       <TopBar title="Practice" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Practice" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>Practice</h1>
             <div className="adm-crumbs">
@@ -98,95 +113,137 @@ export default function PracticeListPage() {
             {error}
           </div>
         )}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {loading && quizzes.length === 0 ? (
-            <div className="adm-card" style={{ padding: 18 }}>
-              Loading…
-            </div>
-          ) : quizzes.length === 0 ? (
-            <div className="adm-card" style={{ padding: 18, color: "var(--a-ink-faint)" }}>
-              No practice quizzes yet. Create your first one.
-            </div>
-          ) : (
-            quizzes.map((q) => (
-              <div key={q.id} className="adm-card" style={{ padding: 14 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    marginBottom: 10,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 10,
-                      background: `var(--a-${q.coverColor}, var(--a-primary))`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "white",
-                      fontWeight: 800,
-                    }}
-                  >
-                    {q.title.slice(0, 1).toUpperCase()}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{q.title}</div>
-                    <div style={{ fontSize: 11, color: "var(--a-ink-faint)" }}>
-                      /{q.slug}
-                    </div>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    fontSize: 12,
-                    color: "var(--a-ink-soft)",
-                    marginBottom: 12,
-                  }}
-                >
-                  <span>{q.questionCount} questions</span>
-                  <span>{q.headCount} players</span>
-                  <span style={{ color: q.published ? "var(--a-success, #16a34a)" : "var(--a-ink-faint)", fontWeight: 700 }}>
-                    {q.published ? "Published" : "Draft"}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <Link
-                    href={`/practice/${q.id}`}
-                    className="adm-btn adm-btn--sm"
-                  >
-                    Edit
-                  </Link>
-                  <button
-                    type="button"
-                    className="adm-btn adm-btn--sm"
-                    onClick={() => void togglePublished(q)}
-                  >
-                    {q.published ? "Unpublish" : "Publish"}
-                  </button>
-                  <button
-                    type="button"
-                    className="adm-btn adm-btn--sm adm-btn--danger"
-                    onClick={() => void remove(q)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        {loading && quizzes.length === 0 ? (
+          <div className="adm-card" style={{ padding: 18 }}>
+            Loading…
+          </div>
+        ) : quizzes.length === 0 ? (
+          <div
+            className="adm-card"
+            style={{ padding: 18, color: "var(--a-ink-faint)" }}
+          >
+            No practice quizzes yet. Create your first one.
+          </div>
+        ) : (
+          <div className="adm-card" style={{ overflow: "hidden" }}>
+            <table className="adm-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Questions</th>
+                  <th>Players</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quizzes.map((q) => (
+                  <tr key={q.id}>
+                    <td>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          minWidth: 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex: "0 0 32px",
+                            width: 32,
+                            height: 32,
+                            borderRadius: 8,
+                            background: `var(--a-${q.coverColor}, var(--a-primary))`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "white",
+                            fontWeight: 800,
+                            fontSize: 13,
+                          }}
+                        >
+                          {q.title.slice(0, 1).toUpperCase()}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>
+                            {q.title}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--a-ink-faint)",
+                              fontFamily: "ui-monospace, monospace",
+                            }}
+                          >
+                            /{q.slug}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{q.questionCount}</td>
+                    <td>{q.headCount}</td>
+                    <td>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          letterSpacing: 0.04,
+                          textTransform: "uppercase",
+                          background: q.published
+                            ? "var(--a-primary-tint, #d1fae5)"
+                            : "var(--a-bg)",
+                          color: q.published
+                            ? "var(--a-primary, #16a34a)"
+                            : "var(--a-ink-faint)",
+                          border: q.published
+                            ? "1px solid var(--a-primary, #16a34a)"
+                            : "1px solid var(--a-line)",
+                        }}
+                      >
+                        {q.published ? "Published" : "Draft"}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          gap: 6,
+                          flexWrap: "wrap",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <Link
+                          href={`/practice/${q.id}`}
+                          className="adm-btn adm-btn--sm"
+                        >
+                          Edit
+                        </Link>
+                        <button
+                          type="button"
+                          className="adm-btn adm-btn--sm"
+                          onClick={() => void togglePublished(q)}
+                        >
+                          {q.published ? "Unpublish" : "Publish"}
+                        </button>
+                        <button
+                          type="button"
+                          className="adm-btn adm-btn--sm adm-btn--danger"
+                          onClick={() => void remove(q)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </>
   );

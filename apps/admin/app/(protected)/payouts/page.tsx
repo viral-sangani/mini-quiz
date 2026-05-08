@@ -6,6 +6,9 @@ import type { AdminStats, PayoutStatus } from "@mini-quiz/shared";
 import { BLOCKSCOUT_TX } from "@mini-quiz/shared";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
+import { PayoutFailureCell } from "@/components/PayoutFailureCell";
+import { useToast } from "@/components/Toast";
 import { KpiCard, KpiGrid } from "@/components/KpiCard";
 import { PayoutStatusPill } from "@/components/StatusPill";
 import { AdminIcon } from "@/components/AdminIcon";
@@ -48,6 +51,7 @@ export default function PayoutsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const toast = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -88,9 +92,12 @@ export default function PayoutsPage() {
     setError(null);
     try {
       await adminApi.post(`/admin/payouts/${id}/approve`);
+      toast.success("Payout queued for retry");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Retry failed");
+      const msg = e instanceof Error ? e.message : "Retry failed";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBusyId(null);
     }
@@ -100,7 +107,13 @@ export default function PayoutsPage() {
     <>
       <TopBar title="Payouts" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Payouts" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>Payouts</h1>
             <div
@@ -245,18 +258,7 @@ export default function PayoutsPage() {
                   <tr key={p.id}>
                     <td>
                       <PayoutStatusPill status={p.status} />
-                      {p.failureReason && (
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: "var(--a-wrong)",
-                            marginTop: 2,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {p.failureReason}
-                        </div>
-                      )}
+                      <PayoutFailureCell reason={p.failureReason} />
                       {p.confirmedAt && (
                         <div
                           style={{

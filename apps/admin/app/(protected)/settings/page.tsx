@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
+import { useToast } from "@/components/Toast";
 import { adminApi } from "@/lib/admin-api";
 import { ApiError } from "@/lib/api-client";
 
@@ -14,6 +16,7 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,23 +39,31 @@ export default function SettingsPage() {
         currentPassword,
         newPassword,
       });
+      toast.success("Password changed");
       // Force a fresh sign-in so the new credential is exercised.
       await signOut({ callbackUrl: "/signin?info=password-changed" });
     } catch (e) {
-      if (e instanceof ApiError) {
-        setError(e.message);
-      } else {
-        setError("Could not change password. Try again.");
-      }
+      const msg =
+        e instanceof ApiError
+          ? e.message
+          : "Could not change password. Try again.";
+      setError(msg);
+      toast.error(msg);
       setBusy(false);
     }
   };
 
   return (
     <>
-      <TopBar title="Settings" crumbs="Account" />
+      <TopBar title="Settings" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Settings" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <h1 className="font-display text-2xl font-black tracking-tight">
             Settings
           </h1>

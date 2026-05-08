@@ -6,6 +6,7 @@ import type { PayoutStatus } from "@mini-quiz/shared";
 import { BLOCKSCOUT_TX } from "@mini-quiz/shared";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
 import { PayoutStatusPill } from "@/components/StatusPill";
 import { AdminIcon } from "@/components/AdminIcon";
 import { AdminAvatar, initialsOf } from "@/components/AdminAvatar";
@@ -101,14 +102,21 @@ export default function PayoutDetailPage({
           <div style={{ color: "var(--a-ink-faint)" }}>Loading…</div>
         ) : (
           <>
-            <div className="adm-page-h">
+            <Crumbs
+              items={[
+                { label: "Home", href: "/overview" },
+                { label: "Payouts", href: "/payouts" },
+                {
+                  label: (
+                    <span style={{ fontFamily: "ui-monospace, monospace" }}>
+                      {data.payout.id.slice(0, 12)}…
+                    </span>
+                  ),
+                },
+              ]}
+            />
+            <div className="adm-page-h" style={{ marginTop: 8 }}>
               <div>
-                <div className="adm-crumbs">
-                  Payouts /{" "}
-                  <span style={{ fontFamily: "ui-monospace, monospace" }}>
-                    {data.payout.id}
-                  </span>
-                </div>
                 <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   ${data.payout.amount} USDT to{" "}
                   {data.payout.user.displayName ?? "Player"}{" "}

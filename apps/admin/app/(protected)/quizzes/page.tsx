@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AdminQuiz, QuizStatus } from "@mini-quiz/shared";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
 import { QuizStatusPill } from "@/components/StatusPill";
 import { AdminIcon } from "@/components/AdminIcon";
 import { Sparkline } from "@/components/Sparkline";
@@ -87,7 +88,13 @@ export default function QuizzesPage() {
     <>
       <TopBar title="Games" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Games" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>Games</h1>
             <div className="adm-crumbs">

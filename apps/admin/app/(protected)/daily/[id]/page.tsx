@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
 import { DailyForm, type DailyQuestion } from "@/components/admin/DailyForm";
 import type { LeaderboardRow } from "@mini-quiz/shared";
 import { AdminAvatar, initialsOf } from "@/components/AdminAvatar";
@@ -76,10 +77,17 @@ export default function DailyEditPage() {
     <>
       <TopBar title="Daily quiz" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Daily", href: "/daily" },
+            { label: detail.date ?? detail.title },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>{detail.title}</h1>
-            <div className="adm-crumbs">Daily › {detail.date}</div>
+            <div className="adm-crumbs">{detail.date}</div>
           </div>
         </div>
         <DailyForm

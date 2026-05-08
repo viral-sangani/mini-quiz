@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
+import { useToast } from "@/components/Toast";
 import { AdminIcon } from "@/components/AdminIcon";
 import { AdminAvatar, initialsOf } from "@/components/AdminAvatar";
 import { adminApi } from "@/lib/admin-api";
@@ -24,6 +26,7 @@ export default function AdminsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const toast = useToast();
   const [resetTarget, setResetTarget] = useState<{
     userId: string;
     email: string;
@@ -56,9 +59,10 @@ export default function AdminsPage() {
     if (!confirm(`Revoke admin access for ${target.email}?`)) return;
     try {
       await adminApi.del<void>(`/admin/auth/admins/${target.userId}`);
+      toast.success(`${target.email} revoked`);
       await load();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : "Failed to revoke admin");
+      toast.error(e instanceof ApiError ? e.message : "Failed to revoke admin");
     }
   };
 
@@ -71,9 +75,15 @@ export default function AdminsPage() {
       <div className="adm-content">
         <div className="adm-page-h">
           <div>
+            <Crumbs
+              items={[
+                { label: "Home", href: "/overview" },
+                { label: "Admins" },
+              ]}
+            />
             <h1
               className="font-display text-2xl font-black tracking-tight"
-              style={{ display: "flex", alignItems: "center", gap: 10 }}
+              style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}
             >
               Admins
             </h1>
@@ -235,13 +245,19 @@ export default function AdminsPage() {
       <InviteAdminDialog
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        onCreated={() => void load()}
+        onCreated={() => {
+          toast.success("Admin invited");
+          void load();
+        }}
       />
       <ResetPasswordDialog
         open={resetTarget !== null}
         target={resetTarget}
         onClose={() => setResetTarget(null)}
-        onReset={() => void load()}
+        onReset={() => {
+          toast.success("Password reset");
+          void load();
+        }}
       />
     </>
   );

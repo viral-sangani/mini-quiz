@@ -1,5 +1,6 @@
 "use client";
 
+import { Crumbs } from "@/components/Crumbs";
 import { TopBar } from "@/components/TopBar";
 import { DailyForm } from "@/components/admin/DailyForm";
 
@@ -8,10 +9,16 @@ export default function DailyNewPage() {
     <>
       <TopBar title="Daily quiz" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Daily", href: "/daily" },
+            { label: "New" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>New daily</h1>
-            <div className="adm-crumbs">Daily › New</div>
           </div>
         </div>
         <DailyForm mode="create" />

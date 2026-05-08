@@ -4,9 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
+import { useToast } from "@/components/Toast";
 
 export default function PracticeNewPage() {
   const router = useRouter();
+  const toast = useToast();
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -48,9 +51,12 @@ export default function PracticeNewPage() {
           published,
         },
       );
+      toast.success(`Created "${title.trim()}"`);
       router.push(`/practice/${res.quiz.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Create failed");
+      const msg = e instanceof Error ? e.message : "Create failed";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -60,10 +66,16 @@ export default function PracticeNewPage() {
     <>
       <TopBar title="Practice" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Practice", href: "/practice" },
+            { label: "New" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>New practice quiz</h1>
-            <div className="adm-crumbs">Practice › New</div>
           </div>
         </div>
         <div className="adm-card" style={{ maxWidth: 540 }}>

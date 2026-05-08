@@ -182,6 +182,26 @@ input, select, textarea { font-size: 16px; }
   }
   .mq-tab[aria-current="page"] { color: var(--primary); }
 
+  /* Press-down effect for any tappable surface that isn't already an
+   * MQButton. Choice tiles in live/daily/practice play apply this so
+   * the user feels a physical "click" on tap — like Duolingo. CSS-only
+   * so it works on every mobile webview without framer-motion's
+   * pointer-event quirks. */
+  .mq-press {
+    transition: transform 90ms ease-out, box-shadow 90ms ease-out, filter 90ms ease-out;
+  }
+  .mq-press:active:not(:disabled) {
+    transform: translateY(2px) scale(0.98);
+    filter: brightness(0.97);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mq-press, .mq-press:active:not(:disabled) {
+      transition: none;
+      transform: none;
+      filter: none;
+    }
+  }
+
   /* Pages rendered under the sticky tab bar reserve space at the bottom
    * so scroll content doesn't hide behind it. ~78px ≈ tabbar height +
    * inset; the inset is already inside .mq-tabbar's padding so we don't

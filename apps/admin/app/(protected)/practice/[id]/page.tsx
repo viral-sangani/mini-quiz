@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
 import { AdminIcon } from "@/components/AdminIcon";
+import { Crumbs } from "@/components/Crumbs";
+import { useToast } from "@/components/Toast";
 import {
   AIQuestionGeneratorDialog,
   type AIQuestion,
@@ -40,6 +41,7 @@ const CHOICE_IDS = ["a", "b", "c", "d"];
 export default function PracticeQuizPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const toast = useToast();
   const [detail, setDetail] = useState<QuizDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
@@ -75,9 +77,12 @@ export default function PracticeQuizPage() {
         title: title.trim(),
         description: description.trim() || null,
       });
+      toast.success("Saved");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      const msg = e instanceof Error ? e.message : "Save failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -111,10 +116,13 @@ export default function PracticeQuizPage() {
       await adminApi.post(`/admin/practice/quizzes/${id}/questions`, {
         questions: normalized,
       });
+      toast.success(`Added ${normalized.length} questions`);
       setPending(null);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      const msg = e instanceof Error ? e.message : "Save failed";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSavingPending(false);
     }
@@ -124,9 +132,12 @@ export default function PracticeQuizPage() {
     if (!confirm("Delete this question?")) return;
     try {
       await adminApi.del(`/admin/practice/questions/${qid}`);
+      toast.success("Question deleted");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      const msg = e instanceof Error ? e.message : "Delete failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -159,12 +170,19 @@ export default function PracticeQuizPage() {
     <>
       <TopBar title="Practice" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Practice", href: "/practice" },
+            { label: detail.title },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>{detail.title}</h1>
             <div className="adm-crumbs">
-              <Link href="/practice">Practice</Link> › {detail.slug} ·{" "}
-              {detail.questionCount} questions · {detail.headCount} players
+              /{detail.slug} · {detail.questionCount} questions ·{" "}
+              {detail.headCount} players
             </div>
           </div>
           <div className="actions">
@@ -285,49 +303,131 @@ export default function PracticeQuizPage() {
 
         <div className="adm-card">
           <div className="adm-card-h">
-            <h3>Questions</h3>
+            <h3>Questions ({detail.questions.length})</h3>
           </div>
-          <table className="adm-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Prompt</th>
-                <th>Correct</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {detail.questions.length === 0 ? (
-                <tr>
-                  <td colSpan={4} style={{ padding: 18, color: "var(--a-ink-faint)" }}>
-                    No questions yet. Use “Generate with AI” to seed the pool.
-                  </td>
-                </tr>
-              ) : (
-                detail.questions.map((q, i) => (
-                  <tr key={q.id}>
-                    <td>{i + 1}</td>
-                    <td style={{ maxWidth: 480 }}>{q.prompt}</td>
-                    <td>
-                      {(() => {
-                        const c = q.choices.find((c) => c.id === q.correctChoiceId);
-                        return c ? `${c.id.toUpperCase()}. ${c.label}` : q.correctChoiceId;
-                      })()}
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      <button
-                        type="button"
-                        className="adm-btn adm-btn--sm adm-btn--danger"
-                        onClick={() => void removeQuestion(q.id)}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          {detail.questions.length === 0 ? (
+            <div style={{ padding: 18, color: "var(--a-ink-faint)" }}>
+              No questions yet. Use &ldquo;Generate with AI&rdquo; to seed the pool.
+            </div>
+          ) : (
+            <div style={{ padding: 18, display: "grid", gap: 12 }}>
+              {detail.questions.map((q, i) => (
+                <div
+                  key={q.id}
+                  className="adm-card"
+                  style={{ padding: 14, boxShadow: "none" }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <span
+                      style={{
+                        flex: "0 0 28px",
+                        fontWeight: 800,
+                        fontSize: 12,
+                        color: "var(--a-ink-faint)",
+                        marginTop: 2,
+                      }}
+                    >
+                      Q{i + 1}
+                    </span>
+                    <div
+                      style={{
+                        flex: 1,
+                        fontWeight: 700,
+                        fontSize: 14,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {q.prompt}
+                    </div>
+                    <button
+                      type="button"
+                      className="adm-btn adm-btn--sm adm-btn--danger"
+                      onClick={() => void removeQuestion(q.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gap: 6, marginLeft: 38 }}>
+                    {q.choices.map((c) => {
+                      const isCorrect = c.id === q.correctChoiceId;
+                      return (
+                        <div
+                          key={c.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 10px",
+                            borderRadius: 8,
+                            background: isCorrect
+                              ? "var(--a-primary-tint, #d1fae5)"
+                              : "var(--a-bg)",
+                            border: isCorrect
+                              ? "1px solid var(--a-primary, #16a34a)"
+                              : "1px solid var(--a-line)",
+                            fontSize: 13,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontWeight: 800,
+                              color: isCorrect
+                                ? "var(--a-primary, #16a34a)"
+                                : "var(--a-ink-faint)",
+                              minWidth: 16,
+                            }}
+                          >
+                            {c.id.toUpperCase()}.
+                          </span>
+                          <span style={{ flex: 1 }}>{c.label}</span>
+                          {isCorrect && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 800,
+                                color: "var(--a-primary, #16a34a)",
+                                letterSpacing: 0.06,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              ✓ Correct
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {q.explanation && (
+                    <div
+                      style={{
+                        marginLeft: 38,
+                        marginTop: 8,
+                        padding: "8px 10px",
+                        background: "var(--a-bg)",
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: "var(--a-ink-soft)",
+                        fontStyle: "italic",
+                        borderLeft: "3px solid var(--a-line)",
+                      }}
+                    >
+                      <strong style={{ fontStyle: "normal", color: "var(--a-ink)" }}>
+                        Why:
+                      </strong>{" "}
+                      {q.explanation}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <AIQuestionGeneratorDialog

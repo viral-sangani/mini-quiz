@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 import { auth } from "@/lib/auth";
 import { Sidebar } from "@/components/Sidebar";
 import { SignOutButton } from "@/components/SignOutButton";
+import { ToastProvider } from "@/components/Toast";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const session = await auth();
@@ -10,6 +11,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   if (session.user.role !== "ADMIN") redirect("/signin?error=forbidden");
 
   return (
+    <ToastProvider>
     <div className="min-h-screen">
       {/* Mobile gate — admin CMS is desktop-only. */}
       <div
@@ -39,5 +41,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <div className="flex flex-1 flex-col min-w-0">{children}</div>
       </div>
     </div>
+    </ToastProvider>
   );
 }

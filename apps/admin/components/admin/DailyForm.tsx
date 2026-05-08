@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-api";
 import { AdminIcon } from "@/components/AdminIcon";
+import { useToast } from "@/components/Toast";
 import {
   AIQuestionGeneratorDialog,
   type AIGenerationContext,
@@ -52,6 +53,7 @@ export function DailyForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const toast = useToast();
 
   const lockedToEdit = mode === "edit" && initial?.status && initial.status !== "DRAFT" && initial.status !== "SCHEDULED";
 
@@ -143,9 +145,12 @@ export function DailyForm({
           questions,
         });
       }
+      toast.success(mode === "create" ? "Daily quiz created" : "Daily quiz saved");
       window.location.href = "/daily";
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      const msg = e instanceof Error ? e.message : "Save failed";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

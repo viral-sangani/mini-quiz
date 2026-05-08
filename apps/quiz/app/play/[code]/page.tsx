@@ -1077,6 +1077,7 @@ function QuestionScreen({
               key={c.id}
               onClick={() => !isLocked && !showFeedback && onPick(c.id)}
               disabled={isLocked || showFeedback}
+              className="mq-press"
               style={{
                 ...chrome,
                 borderRadius: 18,

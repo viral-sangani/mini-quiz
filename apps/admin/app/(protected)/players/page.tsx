@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { AdminUser } from "@mini-quiz/shared";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
+import { useToast } from "@/components/Toast";
 import { KpiCard, KpiGrid } from "@/components/KpiCard";
 import { AdminIcon } from "@/components/AdminIcon";
 import { AdminAvatar, initialsOf } from "@/components/AdminAvatar";
@@ -26,6 +28,7 @@ export default function PlayersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flagFor, setFlagFor] = useState<AdminUser | null>(null);
+  const toast = useToast();
 
   const load = async (opts?: { filter?: Filter; search?: string }) => {
     setLoading(true);
@@ -63,28 +66,37 @@ export default function PlayersPage() {
   const promote = async (id: string, role: "USER" | "ADMIN") => {
     try {
       await adminApi.patch(`/admin/users/${id}/role`, { role });
+      toast.success(role === "ADMIN" ? "Promoted to admin" : "Demoted to user");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Role update failed");
+      const msg = e instanceof Error ? e.message : "Role update failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
   const flag = async (id: string, reason: string) => {
     try {
       await adminApi.post(`/admin/users/${id}/flag`, { reason });
+      toast.success("Player flagged");
       setFlagFor(null);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Flag failed");
+      const msg = e instanceof Error ? e.message : "Flag failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
   const unflag = async (id: string) => {
     try {
       await adminApi.post(`/admin/users/${id}/unflag`);
+      toast.success("Player unflagged");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unflag failed");
+      const msg = e instanceof Error ? e.message : "Unflag failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -101,9 +113,12 @@ export default function PlayersPage() {
     }
     try {
       await adminApi.del(`/admin/users/${u.id}`);
+      toast.success(`Deleted ${label}`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+      const msg = e instanceof Error ? e.message : "Delete failed";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -111,7 +126,13 @@ export default function PlayersPage() {
     <>
       <TopBar title="Players" />
       <div className="adm-content">
-        <div className="adm-page-h">
+        <Crumbs
+          items={[
+            { label: "Home", href: "/overview" },
+            { label: "Players" },
+          ]}
+        />
+        <div className="adm-page-h" style={{ marginTop: 8 }}>
           <div>
             <h1>Players</h1>
             <div className="adm-crumbs">

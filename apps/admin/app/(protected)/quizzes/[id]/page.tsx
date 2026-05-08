@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { AdminQuestion, AdminQuiz } from "@mini-quiz/shared";
 import { TopBar } from "@/components/TopBar";
+import { Crumbs } from "@/components/Crumbs";
 import { QuizStatusPill } from "@/components/StatusPill";
 import { AdminIcon } from "@/components/AdminIcon";
 import {
@@ -77,9 +78,15 @@ export default function EditQuizPage({ params }: { params: { id: string } }) {
           <div style={{ color: "var(--a-ink-faint)" }}>Loading…</div>
         ) : (
           <>
-            <div className="adm-page-h">
+            <Crumbs
+              items={[
+                { label: "Home", href: "/overview" },
+                { label: "Games", href: "/quizzes" },
+                { label: quiz.title },
+              ]}
+            />
+            <div className="adm-page-h" style={{ marginTop: 8 }}>
               <div>
-                <div className="adm-crumbs">Games / {quiz.title}</div>
                 <h1
                   style={{ display: "flex", alignItems: "center", gap: 10 }}
                 >
