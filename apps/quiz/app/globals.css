@@ -52,6 +52,12 @@ html, body {
   text-rendering: optimizeLegibility;
   overscroll-behavior: none;
   font-family: var(--font-body);
+  /* Defensive guard: any single overflowing element (e.g. a long unbroken
+   * string in a nowrap container) was pushing the viewport wider on
+   * mobile, which forced auto-zoom + horizontal scroll on every page.
+   * Clipping at the document level keeps phones from doing that. */
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 button { -webkit-tap-highlight-color: transparent; font-family: inherit; cursor: pointer; }

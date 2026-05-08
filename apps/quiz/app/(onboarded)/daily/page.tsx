@@ -175,9 +175,35 @@ export default function DailyHubPage() {
 
         <div style={{ marginTop: 16 }}>
           {finished ? (
-            <MQButton variant="ghost" disabled block>
-              You played today — score {today.progress!.scoreCorrect}/{today.questionCount}
-            </MQButton>
+            // Static status card. Was an MQButton, but `.mq-btn` is
+            // `white-space: nowrap` so on narrow phones the long
+            // "You played today — score 7/10" string overflowed the
+            // viewport, forcing horizontal scroll + zoom-out on the
+            // whole page. Cards wrap naturally.
+            <div
+              style={{
+                background: "var(--bg)",
+                border: "2px solid var(--line)",
+                borderRadius: 14,
+                padding: "12px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                color: "var(--ink-soft)",
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 14,
+                lineHeight: 1.3,
+              }}
+            >
+              <Icon name="check" size={18} color="var(--primary)" strokeWidth={4} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                You played today — score{" "}
+                <strong style={{ color: "var(--ink)" }}>
+                  {today.progress!.scoreCorrect}/{today.questionCount}
+                </strong>
+              </span>
+            </div>
           ) : (
             <Link href="/daily/play" style={{ textDecoration: "none" }}>
               <MQButton variant="primary" block>
