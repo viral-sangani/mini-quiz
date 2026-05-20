@@ -1,6 +1,6 @@
 # Runbooks
 
-> Last updated: **2026-05-07**.
+> Last updated: **2026-05-20**.
 > Update triggers: new procedure, change to existing one, command no
 > longer works as written. Each runbook is meant to be runnable as-is.
 
@@ -127,6 +127,31 @@ kubectl -n api rollout restart deploy/api
 For Redis or Postgres mirror secrets, same pattern with different
 plaintext. Names + namespaces matter — SealedSecret encryption is
 bound to namespace+name.
+
+`REDIS_URL` is cluster-injected from the mirrored `redis-auth` Secret in
+the api Deployment. Keep it set in production because admin login
+rate-limits use Redis for cross-pod counters; local/dev falls back to
+process memory.
+
+## Admin login lockout
+
+`POST /admin/auth/login` rate-limits failed attempts for 15 minutes:
+
+- 5 failed attempts per normalized email locks that email.
+- 20 failed attempts per requester IP blocks that IP window.
+- Responses stay generic (`Invalid email or password`) so callers cannot
+  distinguish unknown emails, wrong passwords, or lockout state.
+
+To clear a production lockout for a known admin, delete the Redis keys by
+hash from a Redis shell after confirming the request is legitimate:
+
+```bash
+EMAIL_HASH=$(printf '%s' 'admin@example.com' | shasum -a 256 | cut -c1-16)
+kubectl -n data exec -it redis-master-0 -- redis-cli \
+  -a "$REDIS_PASSWORD" DEL \
+  "admin-login:email:$EMAIL_HASH" \
+  "admin-login:lock:$EMAIL_HASH"
+```
 
 ## Mirror the CNPG-generated postgres Secret into `api` namespace
 

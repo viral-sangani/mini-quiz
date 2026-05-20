@@ -171,6 +171,9 @@ async function broadcastPayout(payoutId: string): Promise<void> {
         value,
       } as Parameters<typeof walletClient.sendTransaction>[0]);
     } else {
+      // ERC-20 prize transfer: omit feeCurrency so gas is paid in CELO.
+      // Paying gas in the same token can drain a "just enough" USDT/USDC
+      // balance before transfer(), causing an exceeds-balance revert.
       const data = encodeFunctionData({
         abi: ERC20_TRANSFER_ABI,
         functionName: "transfer",
@@ -179,7 +182,6 @@ async function broadcastPayout(payoutId: string): Promise<void> {
       txHash = await walletClient.sendTransaction({
         to: token.address!,
         data,
-        feeCurrency: token.feeCurrencyAddress,
       } as Parameters<typeof walletClient.sendTransaction>[0]);
     }
   } catch (e) {

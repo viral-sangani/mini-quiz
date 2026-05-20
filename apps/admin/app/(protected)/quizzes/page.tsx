@@ -223,7 +223,9 @@ export default function QuizzesPage() {
                       {q.difficulty.charAt(0) + q.difficulty.slice(1).toLowerCase()}
                     </td>
                     <td className="num">{q.questionCount}</td>
-                    <td className="num">{q.playerCount.toLocaleString()}</td>
+                    <td className="num">
+                      {q.playerCount.toLocaleString()}/{q.minParticipants.toLocaleString()}
+                    </td>
                     <td className="num" style={{ fontWeight: 700 }}>
                       ${sumUsdt(q.prizeAmounts)}
                     </td>

@@ -6,11 +6,13 @@ import { Icon, type IconName } from "./Icon";
 export function StatTile({
   label,
   value,
+  subtext,
   icon,
   color,
 }: {
   label: string;
   value: string | number;
+  subtext?: string;
   icon: IconName;
   color: string;
 }) {
@@ -23,6 +25,7 @@ export function StatTile({
         <Icon name={icon} size={18} color="white" />
       </span>
       <div className="mq-stat-tile__value">{value}</div>
+      {subtext && <div className="mq-stat-tile__subtext">{subtext}</div>}
       <div className="mq-stat-tile__label">{label}</div>
     </div>
   );

@@ -5,7 +5,7 @@ import type {
   PublicQuestion,
   PublicQuiz,
 } from "@mini-quiz/shared";
-import { lobbyOpensAtIso } from "@mini-quiz/shared";
+import { lobbyOpensAtIso, playersNeeded } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
 import { newRoomCode } from "./room-code.js";
 
@@ -76,6 +76,8 @@ export type CreateQuizInput = {
   scheduledStart: Date | null;
   questionTimeMs: number;
   prizeAmounts: string[];
+  minParticipants?: number;
+  lobbyOpenLeadMs?: number;
   difficulty?: Difficulty;
   coverColor?: string;
   payoutToken?: "CELO" | "USDC" | "USDT";
@@ -101,11 +103,15 @@ function serializeAdminQuiz(
     endedAt: q.endedAt?.toISOString() ?? null,
     questionTimeMs: q.questionTimeMs,
     prizeAmounts: q.prizeAmounts,
+    minParticipants: q.minParticipants,
+    lobbyOpenLeadMs: q.lobbyOpenLeadMs,
+    playersNeeded: playersNeeded(q._count.players, q.minParticipants),
+    quorumMet: q._count.players >= q.minParticipants,
     difficulty: q.difficulty,
     coverColor: q.coverColor,
     questionCount: q._count.questions,
     playerCount: q._count.players,
-    lobbyOpensAt: lobbyOpensAtIso(scheduledStart),
+    lobbyOpensAt: lobbyOpensAtIso(scheduledStart, q.lobbyOpenLeadMs),
     archivedAt: q.archivedAt?.toISOString() ?? null,
     createdById: q.createdById,
     createdAt: q.createdAt.toISOString(),
@@ -128,11 +134,15 @@ function serializePublicQuiz(
     endedAt: q.endedAt?.toISOString() ?? null,
     questionTimeMs: q.questionTimeMs,
     prizeAmounts: q.prizeAmounts,
+    minParticipants: q.minParticipants,
+    lobbyOpenLeadMs: q.lobbyOpenLeadMs,
+    playersNeeded: playersNeeded(q._count.players, q.minParticipants),
+    quorumMet: q._count.players >= q.minParticipants,
     difficulty: q.difficulty,
     coverColor: q.coverColor,
     questionCount: q._count.questions,
     playerCount: q._count.players,
-    lobbyOpensAt: lobbyOpensAtIso(scheduledStart),
+    lobbyOpensAt: lobbyOpensAtIso(scheduledStart, q.lobbyOpenLeadMs),
   };
 }
 
@@ -167,6 +177,8 @@ export async function createQuiz(
       status,
       questionTimeMs: input.questionTimeMs,
       prizeAmounts: input.prizeAmounts,
+      minParticipants: input.minParticipants,
+      lobbyOpenLeadMs: input.lobbyOpenLeadMs,
       difficulty: input.difficulty,
       coverColor: input.coverColor,
       payoutToken: input.payoutToken,
@@ -193,6 +205,8 @@ export type UpdateQuizInput = Partial<
     | "scheduledStart"
     | "questionTimeMs"
     | "prizeAmounts"
+    | "minParticipants"
+    | "lobbyOpenLeadMs"
     | "difficulty"
     | "coverColor"
     | "payoutToken"
@@ -254,6 +268,8 @@ export async function updateQuiz(
         scheduledStart: input.scheduledStart,
         questionTimeMs: input.questionTimeMs,
         prizeAmounts: input.prizeAmounts,
+        minParticipants: input.minParticipants,
+        lobbyOpenLeadMs: input.lobbyOpenLeadMs,
         difficulty: input.difficulty,
         coverColor: input.coverColor,
         payoutToken: input.payoutToken,
@@ -289,7 +305,7 @@ export async function listAdminQuizzes(filter: {
   const quizzes = await prisma.quiz.findMany({
     where,
     include: { _count: { select: { questions: true, players: true } } },
-    orderBy: [{ scheduledStart: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ scheduledStart: "desc" }, { createdAt: "desc" }],
   });
   return quizzes.map(serializeAdminQuiz);
 }
@@ -305,7 +321,7 @@ export async function listUpcomingPublicQuizzes(): Promise<PublicQuiz[]> {
       kind: "LIVE",
       archivedAt: null,
       OR: [
-        { status: "SCHEDULED", scheduledStart: { gte: now } },
+        { status: "SCHEDULED", scheduledStart: { not: null } },
         { status: "LIVE" },
       ],
     },

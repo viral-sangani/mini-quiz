@@ -16,9 +16,9 @@ export const BLOCKSCOUT_ADDRESS = (addr: string): string =>
 //
 // All tokens supported as prizes. CELO is the native chain asset; USDC and
 // USDT are ERC-20 stablecoins on Celo mainnet. `feeCurrencyAddress` is the
-// CIP-64 fee-currency adapter — sending CIP-64 transactions with the
-// token's own contract address as feeCurrency reverts; you must use the
-// adapter address.
+// CIP-64 fee-currency adapter when we intentionally want to pay gas in that
+// token. Mini Quiz prize payouts currently omit feeCurrency so gas is paid in
+// CELO and a "just enough" stablecoin balance can still be paid out exactly.
 
 export type PayoutTokenSymbol = "CELO" | "USDC" | "USDT";
 
@@ -74,13 +74,13 @@ export function getPayoutToken(symbol: PayoutTokenSymbol): PayoutTokenSpec {
 export function getPayoutTokenByAddress(
   address: string | null | undefined,
 ): PayoutTokenSpec | null {
-  if (!address) {
-    // Payout rows for native CELO store an empty/"CELO" sentinel; both
-    // resolve here to the native token.
+  if (address == null) {
     return null;
   }
   const lower = address.toLowerCase();
   if (lower === "celo" || lower === "") {
+    // Payout rows for native CELO store an empty/"CELO" sentinel; both
+    // resolve here to the native token.
     return PAYOUT_TOKENS.find((t) => t.isNative) ?? null;
   }
   return (

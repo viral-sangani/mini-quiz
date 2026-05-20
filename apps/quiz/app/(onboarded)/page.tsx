@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { PublicQuiz } from "@mini-quiz/shared";
-import { LOBBY_OPEN_LEAD_MS, lobbyPhase } from "@mini-quiz/shared";
+import { lobbyPhase } from "@mini-quiz/shared";
 import { Avatar } from "@/components/Avatar";
 import { Icon } from "@/components/Icon";
 import { Mango } from "@/components/Mango";
@@ -11,6 +11,7 @@ import { MQCard } from "@/components/MQCard";
 import { Pill } from "@/components/Pill";
 import { StatChip } from "@/components/StatChip";
 import { api } from "@/lib/api-client";
+import { formatTokenAmount } from "@/lib/format";
 import { usePlayerCache } from "@/lib/player-cache";
 import { useProfile } from "@/lib/profile-context";
 import { formatLocal } from "@/lib/time";
@@ -204,6 +205,7 @@ function featuredQuiz(quizzes: PublicQuiz[], now: number): PublicQuiz | null {
     const phase = lobbyPhase({
       status: q.status,
       scheduledStart: q.scheduledStart,
+      lobbyOpenLeadMs: q.lobbyOpenLeadMs,
       now,
     });
     if (phase === "live") return 100;
@@ -232,16 +234,18 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
   const phase = lobbyPhase({
     status: quiz.status,
     scheduledStart: quiz.scheduledStart,
+    lobbyOpenLeadMs: quiz.lobbyOpenLeadMs,
     now,
   });
   const isLive = phase === "live";
   const lobbyOpen = phase === "lobby-open" || phase === "starting";
   const startMs = quiz.scheduledStart ? new Date(quiz.scheduledStart).getTime() : null;
-  const lobbyOpenMs = startMs ? startMs - LOBBY_OPEN_LEAD_MS : null;
+  const lobbyOpenMs = startMs ? startMs - quiz.lobbyOpenLeadMs : null;
   const totalUsdt = quiz.prizeAmounts.reduce(
     (sum, a) => sum + Number(a || 0),
     0,
   );
+  const prizePoolLabel = formatTokenAmount(totalUsdt);
   const grad = coverGradient(quiz.coverColor);
 
   // Banner copy depends on phase.
@@ -251,10 +255,12 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
       : phase === "lobby-open" && startMs
         ? `Starts in ${formatMsLabel(startMs - now)}`
         : phase === "starting"
-          ? "Starting now!"
+          ? quiz.quorumMet
+            ? "Starting now!"
+            : `${quiz.playersNeeded} more needed to start`
           : phase === "pre-lobby" && lobbyOpenMs
             ? `Lobby opens in ${formatMsLabel(lobbyOpenMs - now)}`
-            : `Scheduled · $${totalUsdt} USDT pool`;
+            : `Scheduled · $${prizePoolLabel} USDT pool`;
 
   const cta = isLive ? "JOIN LIVE" : lobbyOpen ? "JOIN NOW" : "VIEW";
 
@@ -320,7 +326,7 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
             {quiz.title}
           </div>
           <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.92, marginBottom: 12 }}>
-            ${totalUsdt} USDT pool · {quiz.playerCount} joined
+            ${prizePoolLabel} USDT pool · {quiz.playerCount}/{quiz.minParticipants} joined
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 10 }}>{subline}</div>
           <span
@@ -350,14 +356,16 @@ function UpNextRow({ quiz, now }: { quiz: PublicQuiz; now: number }) {
   const phase = lobbyPhase({
     status: quiz.status,
     scheduledStart: quiz.scheduledStart,
+    lobbyOpenLeadMs: quiz.lobbyOpenLeadMs,
     now,
   });
   const startMs = quiz.scheduledStart ? new Date(quiz.scheduledStart).getTime() : null;
-  const lobbyOpenMs = startMs ? startMs - LOBBY_OPEN_LEAD_MS : null;
+  const lobbyOpenMs = startMs ? startMs - quiz.lobbyOpenLeadMs : null;
   const totalUsdt = quiz.prizeAmounts.reduce(
     (sum, a) => sum + Number(a || 0),
     0,
   );
+  const prizePoolLabel = formatTokenAmount(totalUsdt);
   const countdown =
     phase === "lobby-open" && startMs
       ? `Starts in ${formatMsLabel(startMs - now)}`
@@ -366,7 +374,9 @@ function UpNextRow({ quiz, now }: { quiz: PublicQuiz; now: number }) {
         : phase === "live"
           ? "Live"
           : phase === "starting"
-            ? "Starting"
+            ? quiz.quorumMet
+              ? "Starting"
+              : `${quiz.playersNeeded} needed`
             : "Scheduled";
 
   return (
@@ -405,7 +415,7 @@ function UpNextRow({ quiz, now }: { quiz: PublicQuiz; now: number }) {
           </div>
           <div className="mq-body" style={{ fontSize: 12 }}>
             <span style={{ color: "var(--accent-shade)", fontWeight: 800 }}>
-              ${totalUsdt} USDT
+              ${prizePoolLabel} USDT
             </span>{" "}
             · {quiz.questionCount} questions
           </div>

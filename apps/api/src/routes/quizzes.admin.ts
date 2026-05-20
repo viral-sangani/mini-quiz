@@ -34,6 +34,8 @@ const createSchema = z.object({
     .optional(),
   questionTimeMs: z.number().int().min(5_000).max(120_000),
   prizeAmounts: z.array(z.string()).min(1),
+  minParticipants: z.number().int().min(1).max(100_000).optional(),
+  lobbyOpenLeadMs: z.number().int().min(60_000).max(60 * 60_000).optional(),
   difficulty: z.enum(["EASY", "MEDIUM", "HARD"]).optional(),
   coverColor: z.enum(COVER_COLORS).optional(),
   payoutToken: z.enum(["CELO", "USDC", "USDT"]).optional(),
@@ -77,13 +79,13 @@ async function assertSufficientTreasury(args: {
   if (!args.scheduledStart) return null;
   const required = sumPrize(args.prizeAmounts);
   if (required <= 0) return null;
-  const summary = await getTreasurySummary({ refresh: true });
-  // The treasury summary's "locked" already includes other scheduled
-  // quizzes' prize pools and in-flight payouts. For an EDIT of an
-  // already-scheduled quiz we'd be double-counting that quiz's own
-  // amounts. We don't try to subtract them out — instead, callers pass
-  // excludeQuizId only if they really need to. In the common create
-  // flow it's undefined, which is correct.
+  const summary = await getTreasurySummary({
+    refresh: true,
+    excludeQuizId: args.excludeQuizId,
+  });
+  // The treasury summary's "locked" includes scheduled/live quiz pools and
+  // in-flight payouts. For edits, exclude the quiz being edited so its
+  // existing locked amount can be replaced by the new effective prize pool.
   const available = Number(summary.available[args.payoutToken]);
   if (!Number.isFinite(available) || available < required) {
     return {
@@ -95,7 +97,6 @@ async function assertSufficientTreasury(args: {
       treasuryAddress: summary.address,
     };
   }
-  void args.excludeQuizId; // currently unused; placeholder for future edit-flow refinement
   return null;
 }
 
@@ -126,6 +127,8 @@ export async function adminQuizRoutes(app: FastifyInstance) {
         scheduledStart,
         questionTimeMs: parsed.data.questionTimeMs,
         prizeAmounts: parsed.data.prizeAmounts,
+        minParticipants: parsed.data.minParticipants,
+        lobbyOpenLeadMs: parsed.data.lobbyOpenLeadMs,
         difficulty: parsed.data.difficulty,
         coverColor: parsed.data.coverColor,
         payoutToken,
@@ -149,18 +152,49 @@ export async function adminQuizRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
     try {
+      const existing = await prisma.quiz.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          status: true,
+          scheduledStart: true,
+          prizeAmounts: true,
+          payoutToken: true,
+        },
+      });
+      if (!existing) return reply.code(404).send({ error: "Quiz not found" });
+      if (existing.status !== "DRAFT" && existing.status !== "SCHEDULED") {
+        return reply
+          .code(400)
+          .send({ error: `Cannot edit quiz with status ${existing.status}` });
+      }
+      const scheduledStart =
+        parsed.data.scheduledStart !== undefined
+          ? parsed.data.scheduledStart
+            ? new Date(parsed.data.scheduledStart)
+            : null
+          : existing.scheduledStart;
+      const insufficient = await assertSufficientTreasury({
+        payoutToken: parsed.data.payoutToken ?? existing.payoutToken,
+        prizeAmounts: parsed.data.prizeAmounts ?? existing.prizeAmounts,
+        scheduledStart,
+        excludeQuizId: existing.id,
+      });
+      if (insufficient) {
+        return reply.code(400).send(insufficient);
+      }
       const quiz = await updateQuiz(req.params.id, {
         title: parsed.data.title,
         description: parsed.data.description,
-        scheduledStart: parsed.data.scheduledStart
-          ? new Date(parsed.data.scheduledStart)
-          : parsed.data.scheduledStart === null
-            ? null
-            : undefined,
+        scheduledStart:
+          parsed.data.scheduledStart !== undefined ? scheduledStart : undefined,
         questionTimeMs: parsed.data.questionTimeMs,
         prizeAmounts: parsed.data.prizeAmounts,
+        minParticipants: parsed.data.minParticipants,
+        lobbyOpenLeadMs: parsed.data.lobbyOpenLeadMs,
         difficulty: parsed.data.difficulty,
         coverColor: parsed.data.coverColor,
+        payoutToken: parsed.data.payoutToken,
         questions: parsed.data.questions,
       });
       return { quiz };

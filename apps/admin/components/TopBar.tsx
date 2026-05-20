@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { AdminIcon } from "./AdminIcon";
 
 export function TopBar({
@@ -28,11 +27,7 @@ export function TopBar({
         <button className="adm-btn" disabled aria-label="Notifications">
           <AdminIcon name="bell" size={14} color="var(--a-ink-soft)" />
         </button>
-        {primaryAction ?? (
-          <Link href="/quizzes/new" className="adm-btn adm-btn--primary">
-            <AdminIcon name="plus" size={14} color="white" /> New game
-          </Link>
-        )}
+        {primaryAction}
       </div>
     </div>
   );

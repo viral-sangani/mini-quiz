@@ -192,6 +192,10 @@ model Quiz {
   endedAt        DateTime?
   questionTimeMs Int
   prizeAmounts   String[]
+  // Live-quiz quorum controls. SCHEDULED live quizzes stay joinable after
+  // scheduledStart until players.count reaches minParticipants.
+  minParticipants Int @default(1)
+  lobbyOpenLeadMs Int @default(300000)
   // Visual hints surfaced on player home cards + admin list. Stored as design
   // tokens (primary | berry | sky | accent | ink), mapped to CSS vars on render.
   difficulty     Difficulty @default(MEDIUM)

@@ -47,6 +47,10 @@ export type PublicQuiz = {
   endedAt: string | null;
   questionTimeMs: number;
   prizeAmounts: string[];
+  minParticipants: number;
+  lobbyOpenLeadMs: number;
+  playersNeeded: number;
+  quorumMet: boolean;
   difficulty: Difficulty;
   coverColor: string; // CoverColor token; loose typed for forward-compat
   questionCount: number;
@@ -269,6 +273,14 @@ export type RoomEvent =
   | { type: "quiz_scheduled"; quizId: string; scheduledStart: string }
   | { type: "quiz_started"; quizId: string; startedAt: string; endsAt: string }
   | { type: "quiz_ended"; quizId: string; endedAt: string }
+  | {
+      type: "lobby_updated";
+      quizId: string;
+      playerCount: number;
+      minParticipants: number;
+      playersNeeded: number;
+      quorumMet: boolean;
+    }
   | { type: "player_joined"; userId: string; displayName: string }
   | {
       type: "answer_submitted";

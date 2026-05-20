@@ -11,6 +11,7 @@
     "dev:api": "pnpm --filter @mini-quiz/api dev",
     "dev:quiz": "pnpm --filter @mini-quiz/quiz dev",
     "dev:admin": "pnpm --filter @mini-quiz/admin dev",
+    "dev:ngrok": "bash scripts/dev-ngrok.sh",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

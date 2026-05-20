@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-08** (admin AI topic suggestions).
+> Last updated: **2026-05-20** (live quiz quorum + admin login rate limits).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -36,7 +36,7 @@
 │ │  └─────────────┘                  │                   │      │
 │ └──────────────────────────────────────────────────────┘      │
 │                         │                                      │
-│                  viem (CIP-64 fee abstraction)                 │
+│                  viem (CELO gas for prize transfers)           │
 │                         ▼                                      │
 │              Celo mainnet (USDT payouts)                       │
 └─────────────────────────────────────────────────────────────────┘
@@ -79,9 +79,11 @@
 ### `apps/admin` — admin console
 
 - Desktop-first (mobile gate at <768px).
-- NextAuth v5 (Google OAuth + email magic-link), JWT-only sessions, no
-  Prisma adapter. The `signIn` callback hard-blocks emails not on
-  `ADMIN_EMAILS`. JWT carries `sub: <email>`, `role: ADMIN|USER`.
+- NextAuth v5 Credentials provider, JWT-only sessions, no Prisma adapter.
+  Password verification lives in the api (`/admin/auth/login`) against
+  `AdminCredential` bcrypt hashes. The login endpoint rate-limits failed
+  attempts by normalized email + requester IP using Redis when available,
+  with an in-memory fallback for local/dev.
 - All page data flows through the api over HTTPS (`adminApi` in
   `lib/admin-api.ts`). Admin app does not touch Postgres directly.
 - Pages: `/overview`, `/quizzes`, `/quizzes/[id]/live`, `/daily`,
@@ -110,6 +112,9 @@ read the schema. Key relationships at a glance:
 - `Quiz` 1:N `Question` 1:N `Choice`. `Question` 1:N `Answer`.
   `Quiz` 1:N `Payout`.
 - `Quiz.status`: `DRAFT | SCHEDULED | LIVE | ENDED | ARCHIVED`.
+- LIVE quizzes have quorum controls: `minParticipants` and
+  `lobbyOpenLeadMs`. A `SCHEDULED` quiz whose start time has passed remains
+  joinable until `RoomPlayer` count reaches quorum.
 - `Payout.status`: `PENDING | APPROVED | BROADCAST | CONFIRMED | FAILED`.
   Auto-payouts skip PENDING — they're created at APPROVED.
 - `Quiz.prizeAmounts` is a `String[]` of human-readable USDT amounts;
@@ -123,8 +128,10 @@ read the schema. Key relationships at a glance:
 2. Frontend `POST /rooms/:code/join` with display name + wallet.
 3. Server creates `RoomPlayer` row, returns `roomPlayerId` + JWT.
 4. Frontend opens SSE `/rooms/:code/events?token=...`.
-5. Scheduler tick eventually flips quiz to LIVE → SSE broadcasts
-   `quiz_started` → frontend transitions to question screen.
+5. Scheduler tick flips quiz to LIVE only after `scheduledStart` has passed
+   and `playerCount >= minParticipants`. If quorum is missing, the quiz stays
+   `SCHEDULED`, the lobby stays joinable, and SSE broadcasts `lobby_updated`.
+   When quorum is reached, `quiz_started` moves clients to the question screen.
 6. Each question: server broadcasts `question_started` with
    `endsAt` timestamp. Frontend counts down locally.
 7. Player answers: `POST /rooms/:code/answer`. Server scores it,
@@ -136,14 +143,15 @@ read the schema. Key relationships at a glance:
 
 ### Admin creates + runs a quiz
 
-1. Admin signs in via NextAuth (Google or email).
+1. Admin signs in via NextAuth Credentials; the api verifies the password.
 2. `apps/admin` mints a backend JWT signed with `NEXTAUTH_SECRET`.
 3. Optional: admin uses `POST /admin/ai/suggest-topics`, then
    `POST /admin/ai/generate-questions` to seed editable questions.
 4. `POST /admin/quizzes` with body, including `prizeAmounts`.
 5. Quiz lands at `DRAFT`. Admin transitions to `SCHEDULED` with
    `scheduledStart`.
-6. Scheduler picks it up at the start time → LIVE.
+6. Scheduler picks it up at the start time only if quorum is met; otherwise
+   it waits in `SCHEDULED` until enough players join.
 7. Admin can `POST /admin/quizzes/:id/end` to manually end early
    (also auto-payouts).
 8. Admin live-monitor page consumes SSE for real-time KPIs +
@@ -158,8 +166,10 @@ read the schema. Key relationships at a glance:
      `quiz.prizeAmounts.length`.
    - For each ranked player with `walletAddress != null`: creates
      `Payout` row at `APPROVED`, then immediately calls
-     `broadcastPayout(id)` which signs + sends a USDT transfer via
-     viem with CIP-64 fee abstraction (gas paid in USDT itself).
+     `broadcastPayout(id)` which signs + sends the prize token transfer via
+     viem. ERC-20 prize transfers omit `feeCurrency`, so gas is paid in CELO
+     and exact USDT/USDC prize balances can be sent without the gas fee
+     reducing that same token first.
    - On success: row → `CONFIRMED` with `txHash`.
    - On failure: row → `FAILED` with `failureReason`. Admin can
      retry via `POST /admin/payouts/:id/approve`.

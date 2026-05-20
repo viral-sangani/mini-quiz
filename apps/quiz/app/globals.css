@@ -17,12 +17,15 @@
 
   --primary: #4CD050;
   --primary-shade: #2FA833;
+  --primary-tint: #E6F7E7;
   --accent: #FF9F1C;
   --accent-shade: #D87C00;
+  --accent-tint: #FFF2DA;
   --berry: #FF5C8A;
   --berry-shade: #D63B6E;
   --sky: #38B6FF;
   --sky-shade: #1B91D6;
+  --sky-tint: #E1F1FB;
   --sunshine: #FFD23F;
   --sunshine-shade: #E0B017;
   --violet: #9B5CF6;
@@ -30,6 +33,7 @@
   --gold: #F7B500;
   --wrong: #FF4747;
   --wrong-shade: #C92929;
+  --wrong-tint: #FCE5E5;
 
   --r-pill: 999px;
   --r-card: 22px;
@@ -268,8 +272,17 @@ input, select, textarea { font-size: 16px; }
     font-size: 26px;
     line-height: 1.05;
     color: var(--ink);
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
     margin-top: 6px;
+  }
+  .mq-stat-tile__subtext {
+    position: relative;
+    z-index: 1;
+    font-size: 12px;
+    line-height: 1.15;
+    font-weight: 800;
+    color: var(--ink-soft);
+    margin-top: 2px;
   }
   .mq-stat-tile__label {
     position: relative;

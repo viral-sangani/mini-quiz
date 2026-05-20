@@ -115,7 +115,8 @@ export default function ProfilePage() {
         />
         <StatTile
           label="STREAK"
-          value={`${profile.currentStreak}🔥 (best ${profile.longestStreak})`}
+          value={`${profile.currentStreak}🔥`}
+          subtext={`Best: ${profile.longestStreak}`}
           icon="flame"
           color="var(--accent)"
         />

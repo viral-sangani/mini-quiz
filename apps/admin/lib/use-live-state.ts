@@ -73,6 +73,11 @@ function reducer(s: State, a: Action): State {
             ...s,
             live: { ...s.live, activePlayers: s.live.activePlayers + 1 },
           };
+        case "lobby_updated":
+          return {
+            ...s,
+            live: { ...s.live, activePlayers: e.playerCount },
+          };
         case "answer_submitted":
           // Already covered by leaderboard + answer_distribution events; keep
           // for future avg-correct ticking if needed.

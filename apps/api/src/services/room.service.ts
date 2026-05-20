@@ -1,6 +1,6 @@
 import { Prisma } from "../db.js";
 import type { AdminLiveState, Choice, LeaderboardRow } from "@mini-quiz/shared";
-import { LOBBY_OPEN_LEAD_MS, computePoints } from "@mini-quiz/shared";
+import { computePoints, playersNeeded } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
 import { enqueuePostAnswerBroadcasts } from "./broadcast-queue.js";
@@ -9,7 +9,9 @@ export type JoinResult =
   | { quizId: string; roomPlayerId: string; userId: string }
   | { error: string; code?: "PRE_LOBBY" | "LATE" | "CLOSED" | "BAD_INPUT"; lobbyOpensAt?: string };
 
-// Join is allowed only in the [scheduledStart - LOBBY_OPEN_LEAD_MS, scheduledStart) window.
+// Join is allowed from [scheduledStart - lobbyOpenLeadMs] while the quiz
+// remains SCHEDULED. If quorum is missing at scheduledStart, the lobby stays
+// joinable until enough players arrive and the scheduler flips it LIVE.
 // On a successful join, the user's membership in any OTHER lobby is auto-removed
 // (last-join wins) so a player can never be in two lobbies at once.
 //
@@ -42,18 +44,12 @@ export async function joinRoom(
     return { error: "Quiz is not scheduled yet", code: "CLOSED" };
   }
   const startMs = quiz.scheduledStart.getTime();
-  const lobbyOpenMs = startMs - LOBBY_OPEN_LEAD_MS;
+  const lobbyOpenMs = startMs - quiz.lobbyOpenLeadMs;
   if (now < lobbyOpenMs) {
     return {
       error: "Lobby not open yet",
       code: "PRE_LOBBY",
       lobbyOpensAt: new Date(lobbyOpenMs).toISOString(),
-    };
-  }
-  if (now >= startMs) {
-    return {
-      error: "Lobby has closed — quiz is starting",
-      code: "LATE",
     };
   }
 
@@ -87,6 +83,7 @@ export async function joinRoom(
       where: { id: { in: otherLobbies.map((r) => r.id) } },
     });
     for (const o of otherLobbies) {
+      await broadcastLobbyUpdate(o.quizId);
       broadcast(o.quizId, {
         type: "player_joined", // generic refresh; clients re-fetch playerCount
         userId: user.id,
@@ -106,8 +103,29 @@ export async function joinRoom(
     userId: user.id,
     displayName: name,
   });
+  await broadcastLobbyUpdate(quiz.id);
 
   return { quizId: quiz.id, roomPlayerId: roomPlayer.id, userId: user.id };
+}
+
+async function broadcastLobbyUpdate(quizId: string): Promise<void> {
+  const quiz = await prisma.quiz.findUnique({
+    where: { id: quizId },
+    select: {
+      minParticipants: true,
+      _count: { select: { players: true } },
+    },
+  });
+  if (!quiz) return;
+  const playerCount = quiz._count.players;
+  broadcast(quizId, {
+    type: "lobby_updated",
+    quizId,
+    playerCount,
+    minParticipants: quiz.minParticipants,
+    playersNeeded: playersNeeded(playerCount, quiz.minParticipants),
+    quorumMet: playerCount >= quiz.minParticipants,
+  });
 }
 
 // Grace window beyond questionTimeMs to accept stragglers — covers the

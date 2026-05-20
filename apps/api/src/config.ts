@@ -28,6 +28,10 @@ const schema = z.object({
     ),
   CELO_RPC_URL: z.string().url().default("https://forno.celo.org"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  REDIS_URL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .default("info"),

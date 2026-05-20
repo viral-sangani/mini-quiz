@@ -11,10 +11,10 @@ import type {
   PublicQuiz,
   RoomEvent,
 } from "@mini-quiz/shared";
-import { BLOCKSCOUT_TX, lobbyPhase } from "@mini-quiz/shared";
+import { lobbyPhase } from "@mini-quiz/shared";
 import { Avatar } from "@/components/Avatar";
 import { fireConfetti } from "@/components/ConfettiBurst";
-import { Icon } from "@/components/Icon";
+import { Icon, type IconName } from "@/components/Icon";
 import { Mango } from "@/components/Mango";
 import { MQButton } from "@/components/MQButton";
 import { MQCard } from "@/components/MQCard";
@@ -23,6 +23,7 @@ import { Pill } from "@/components/Pill";
 import { ProgressBar } from "@/components/ProgressBar";
 import { StatTile } from "@/components/StatTile";
 import { ApiError, api } from "@/lib/api-client";
+import { formatTokenAmount } from "@/lib/format";
 import { useProfile } from "@/lib/profile-context";
 import { useRoomEvents } from "@/lib/sse";
 import { msUntil } from "@/lib/time";
@@ -51,9 +52,7 @@ const CHOICE_COLORS = [
 const FEEDBACK_HOLD_MS = 1500;
 
 function formatPrize(amount: string): string {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return amount;
-  return n.toFixed(2).replace(/\.00$/, "");
+  return formatTokenAmount(amount);
 }
 
 export default function PlayPage() {
@@ -93,6 +92,7 @@ function PlayInner() {
   const [payouts, setPayouts] = useState<PublicPayout[]>([]);
   const [celebrationPayout, setCelebrationPayout] = useState<PublicPayout | null>(null);
   const [timerTick, setTimerTick] = useState<number>(0);
+  const [navLockMessage, setNavLockMessage] = useState<string | null>(null);
 
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownFiredRef = useRef<boolean>(false);
@@ -106,6 +106,25 @@ function PlayInner() {
     if (typeof window === "undefined") return "";
     return window.location.href;
   }, []);
+  const lockQuizNavigation =
+    phase === "playing" || (phase === "finished" && quiz?.status === "LIVE");
+
+  useEffect(() => {
+    if (!lockQuizNavigation || typeof window === "undefined") return;
+
+    const showLockedMessage = () => {
+      setNavLockMessage("Please stay until the quiz ends to see final results.");
+      window.setTimeout(() => setNavLockMessage(null), 2200);
+    };
+    const lockState = { miniQuizLocked: true };
+    window.history.pushState(lockState, "", window.location.href);
+    const onPopState = () => {
+      window.history.pushState(lockState, "", window.location.href);
+      showLockedMessage();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [lockQuizNavigation]);
 
   // ---------------- Boot: gated on auth state ----------------
   useEffect(() => {
@@ -131,6 +150,7 @@ function PlayInner() {
         const lp = lobbyPhase({
           status: data.quiz.status,
           scheduledStart: data.quiz.scheduledStart,
+          lobbyOpenLeadMs: data.quiz.lobbyOpenLeadMs,
         });
         if (lp === "ended") {
           setPhase("closed");
@@ -166,6 +186,7 @@ function PlayInner() {
       const lp = lobbyPhase({
         status: quiz.status,
         scheduledStart: quiz.scheduledStart,
+        lobbyOpenLeadMs: quiz.lobbyOpenLeadMs,
       });
       if (lp === "lobby-open" || lp === "starting") setPhase("joining");
     };
@@ -228,16 +249,42 @@ function PlayInner() {
         case "leaderboard":
           setLeaderboardRows(event.rows);
           break;
+        case "lobby_updated":
+          setQuiz((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  playerCount: event.playerCount,
+                  minParticipants: event.minParticipants,
+                  playersNeeded: event.playersNeeded,
+                  quorumMet: event.quorumMet,
+                }
+              : prev,
+          );
+          break;
+        case "payout_pending":
         case "payout_approved":
-        case "payout_confirmed": {
+        case "payout_confirmed":
+        case "payout_failed": {
           const payout: PublicPayout = {
             id: event.payoutId,
             rank: event.rank,
             amount: event.amount,
             tokenAddress: "",
-            status: event.type === "payout_confirmed" ? "CONFIRMED" : "BROADCAST",
-            txHash: event.txHash,
-            confirmedAt: event.type === "payout_confirmed" ? new Date().toISOString() : null,
+            status:
+              event.type === "payout_confirmed"
+                ? "CONFIRMED"
+                : event.type === "payout_approved"
+                  ? "BROADCAST"
+                  : event.type === "payout_failed"
+                    ? "FAILED"
+                    : "PENDING",
+            txHash:
+              event.type === "payout_approved" || event.type === "payout_confirmed"
+                ? event.txHash
+                : null,
+            confirmedAt:
+              event.type === "payout_confirmed" ? new Date().toISOString() : null,
             userId: event.userId,
             displayName: "",
             walletAddress: null,
@@ -251,6 +298,7 @@ function PlayInner() {
           if (event.type === "payout_confirmed" && event.userId === userId) {
             setCelebrationPayout(payout);
             fireConfetti();
+            void refreshProfile();
           }
           break;
         }
@@ -263,9 +311,9 @@ function PlayInner() {
   // When the quiz ends, pull a fresh profile so totalXp / level / badges
   // are current on the home and profile tabs without a reload.
   useEffect(() => {
-    if (phase !== "finished") return;
+    if (phase !== "finished" || quiz?.status !== "ENDED") return;
     void refreshProfile();
-  }, [phase, refreshProfile]);
+  }, [phase, quiz?.status, refreshProfile]);
 
   // Reset per-question state when index changes.
   useEffect(() => {
@@ -488,6 +536,7 @@ function PlayInner() {
     );
   }
   if (phase === "playing") return <BootingScreen label="Loading question…" />;
+  if (!quiz) return <BootingScreen label="Loading results…" />;
   // phase === "finished"
   return (
     <ResultsScreen
@@ -500,6 +549,8 @@ function PlayInner() {
       payouts={payouts}
       celebrationPayout={celebrationPayout}
       viewerUserId={userId}
+      quiz={quiz}
+      navLockMessage={navLockMessage}
     />
   );
 }
@@ -618,8 +669,9 @@ function PreLobbyScreen({ quiz }: { quiz: PublicQuiz }) {
     return () => clearInterval(id);
   }, []);
   const startMs = quiz.scheduledStart ? new Date(quiz.scheduledStart).getTime() : 0;
-  const lobbyOpenMs = startMs - 5 * 60_000;
+  const lobbyOpenMs = startMs - quiz.lobbyOpenLeadMs;
   const msToLobby = Math.max(0, lobbyOpenMs - now);
+  const lobbyMinutes = Math.round(quiz.lobbyOpenLeadMs / 60_000);
 
   return (
     <main
@@ -630,7 +682,7 @@ function PreLobbyScreen({ quiz }: { quiz: PublicQuiz }) {
         <Mango pose="sleep" size={120} />
         <h1 className="mq-h2" style={{ marginTop: 8 }}>{quiz.title}</h1>
         <p className="mq-body" style={{ fontSize: 13, marginTop: 4 }}>
-          Lobby opens 5 minutes before the quiz starts.
+          Lobby opens {lobbyMinutes} minutes before the quiz starts.
         </p>
         <div
           style={{
@@ -689,6 +741,44 @@ function LobbyScreen({
   const startMs = quiz.scheduledStart ? new Date(quiz.scheduledStart).getTime() : 0;
   const left = Math.max(0, startMs - now);
   const totalUsdt = quiz.prizeAmounts.reduce((s, a) => s + Number(a || 0), 0);
+  const waitingForQuorum = now >= startMs && !quiz.quorumMet;
+  const prizePoolLabel = formatTokenAmount(totalUsdt);
+  const timerLabel = waitingForQuorum
+    ? `${quiz.playersNeeded} more`
+    : formatLobbyTimerLabel(left);
+  const timerFontSize = waitingForQuorum
+    ? timerLabel.length > 6
+      ? 24
+      : 30
+    : lobbyTimerFontSize(timerLabel);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
+
+  const inviteUrl =
+    typeof window === "undefined" ? "" : `${window.location.origin}/play/${quiz.code}`;
+  const shareText = `${quiz.title} has a ${formatPrize(String(totalUsdt))} USDT prize pool. ${quiz.playersNeeded} more ${quiz.playersNeeded === 1 ? "player is" : "players are"} needed to start. Join here: ${inviteUrl}`;
+  const shareInvite = async () => {
+    if (!inviteUrl) return;
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({
+          title: quiz.title,
+          text: shareText,
+          url: inviteUrl,
+        });
+        setShareStatus("Invite sent");
+        return;
+      }
+      await navigator.clipboard.writeText(shareText);
+      setShareStatus("Invite copied");
+    } catch {
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        setShareStatus("Link copied");
+      } catch {
+        setShareStatus("Copy failed");
+      }
+    }
+  };
 
   // Show the first 8 players + a "+N more" line. Move the viewer to the front.
   const players = useMemo(() => {
@@ -704,7 +794,7 @@ function LobbyScreen({
 
   return (
     <main className="mq-screen" style={{ minHeight: "100dvh", padding: "12px 0 16px" }}>
-      <Header title={quiz.title} backHref="/" />
+      <Header title={quiz.title} backHref={null} />
 
       <div
         style={{
@@ -730,16 +820,20 @@ function LobbyScreen({
               boxShadow: "0 6px 0 0 var(--primary-shade)",
             }}
           >
-            <div className={left < 10_000 ? "mq-pulse" : ""}>
+            <div className={!waitingForQuorum && left < 10_000 ? "mq-pulse" : ""}>
               <div
                 className="mq-h1 mq-num"
                 style={{
-                  fontSize: left >= 86_400_000 ? 28 : left >= 3_600_000 ? 36 : 56,
+                  fontSize: timerFontSize,
                   color: "var(--primary)",
                   lineHeight: 1,
+                  maxWidth: 120,
+                  overflow: "hidden",
+                  textAlign: "center",
+                  whiteSpace: "nowrap",
                 }}
               >
-                {formatDuration(left)}
+                {timerLabel}
               </div>
             </div>
           </div>
@@ -758,12 +852,16 @@ function LobbyScreen({
               border: "2px solid white",
             }}
           >
-            STARTING
+            {waitingForQuorum ? "QUORUM" : "STARTING"}
           </div>
         </div>
-        <h2 className="mq-h2" style={{ marginTop: 4 }}>Ready up!</h2>
+        <h2 className="mq-h2" style={{ marginTop: 4 }}>
+          {waitingForQuorum ? "Invite friends" : "Ready up!"}
+        </h2>
         <p className="mq-body" style={{ fontSize: 14 }}>
-          Quiz starts in {formatDuration(left)}
+          {waitingForQuorum
+            ? "The quiz starts as soon as enough players join."
+            : `Quiz starts in ${formatDuration(left)}`}
         </p>
       </div>
 
@@ -776,14 +874,61 @@ function LobbyScreen({
         }}
       >
         <span className="mq-eyebrow" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <Icon name="people" size={11} /> {quiz.playerCount} JOINED
+          <Icon name="people" size={11} /> {quiz.playerCount}/{quiz.minParticipants} JOINED
         </span>
         <Pill style={{ fontSize: 11, padding: "4px 10px", color: "var(--accent-shade)", borderColor: "var(--accent)" }}>
-          ${totalUsdt} USDT
+          ${prizePoolLabel} USDT
         </Pill>
       </div>
 
       <div style={{ padding: "0 16px", flex: 1 }}>
+        <div
+          style={{
+            marginBottom: 14,
+            padding: 12,
+            borderRadius: 18,
+            background: waitingForQuorum ? "var(--primary-tint)" : "var(--card)",
+            border: "2px solid var(--line)",
+            boxShadow: "0 3px 0 0 var(--line)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+              fontSize: 12,
+              fontWeight: 900,
+              fontFamily: "var(--font-display)",
+            }}
+          >
+            <span>{quiz.quorumMet ? "Quorum reached" : "Waiting for quorum"}</span>
+            <span>
+              {quiz.playersNeeded === 0
+                ? "Ready"
+                : `${quiz.playersNeeded} ${quiz.playersNeeded === 1 ? "player" : "players"} needed`}
+            </span>
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              height: 10,
+              borderRadius: 999,
+              background: "rgba(0,0,0,0.08)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.min(100, (quiz.playerCount / quiz.minParticipants) * 100)}%`,
+                background: "var(--primary)",
+                borderRadius: 999,
+                transition: "width 200ms ease",
+              }}
+            />
+          </div>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
           {top.map((p) => {
             const me = p.userId === viewerUserId;
@@ -838,9 +983,21 @@ function LobbyScreen({
       </div>
 
       <div style={{ padding: "12px 20px 24px" }}>
-        <MQButton block size="lg" disabled>
-          <Icon name="check" size={18} color="white" /> You&apos;re in
+        <MQButton block size="lg" onClick={() => void shareInvite()}>
+          <Icon name="share" size={18} color="white" /> Invite friends
         </MQButton>
+        <div
+          style={{
+            minHeight: 18,
+            marginTop: 8,
+            textAlign: "center",
+            fontSize: 12,
+            fontWeight: 800,
+            color: "var(--ink-soft)",
+          }}
+        >
+          {shareStatus ?? "Share the link to help the game start faster."}
+        </div>
       </div>
     </main>
   );
@@ -895,22 +1052,16 @@ function QuestionScreen({
     >
       <div style={{ padding: "8px 16px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <Link
-            href="/"
-            aria-label="Leave quiz"
+          <div
+            aria-hidden="true"
             style={{
               width: 32,
               height: 32,
-              borderRadius: 10,
-              background: "var(--card)",
-              border: "2px solid var(--line)",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
             }}
-          >
-            <Icon name="x" size={16} color="var(--ink-soft)" />
-          </Link>
+          />
           <div style={{ flex: 1 }}>
             <ProgressBar pct={pct} color={timeColor} />
           </div>
@@ -1232,6 +1383,7 @@ function QuestionScreen({
 }
 
 function ResultsScreen({
+  quiz,
   myRank,
   myRow,
   totalPlayers,
@@ -1241,7 +1393,9 @@ function ResultsScreen({
   payouts,
   celebrationPayout,
   viewerUserId,
+  navLockMessage,
 }: {
+  quiz: PublicQuiz;
   myRank: number | null;
   myRow: LeaderboardRow | null;
   totalPlayers: number;
@@ -1251,44 +1405,117 @@ function ResultsScreen({
   payouts: PublicPayout[];
   celebrationPayout: PublicPayout | null;
   viewerUserId: string | null;
+  navLockMessage: string | null;
 }) {
+  const [now, setNow] = useState(() => Date.now());
+  const resultConfettiShown = useRef(false);
   const top3 = leaderboardRows.slice(0, 3);
+  const isQuizEnded = quiz.status === "ENDED";
+  const remainingMs = quiz.endedAt
+    ? Math.max(0, new Date(quiz.endedAt).getTime() - now)
+    : 0;
   const isWinner = myRank !== null && myRank <= 3;
+  const viewerPayout =
+    payouts.find((p) => p.userId === viewerUserId) ?? celebrationPayout;
+  const winnerAmount =
+    viewerPayout?.amount ??
+    (isWinner && myRank ? quiz.prizeAmounts[myRank - 1] : undefined);
+  const accuracy =
+    myRow && myRow.answeredCount > 0
+      ? `${Math.round((myRow.correctCount / myRow.answeredCount) * 100)}%`
+      : correctCount > 0
+        ? "—"
+        : "0";
+
+  useEffect(() => {
+    if (isQuizEnded) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isQuizEnded]);
+
+  useEffect(() => {
+    if (!isQuizEnded || !isWinner || resultConfettiShown.current) return;
+    resultConfettiShown.current = true;
+    fireConfetti();
+  }, [isQuizEnded, isWinner]);
+
+  const headline = !isQuizEnded
+    ? "Leaderboard is live"
+    : isWinner
+      ? winnerAmount
+        ? `You won $${formatPrize(winnerAmount)} USDT!`
+        : `You finished ${ordinal(myRank!)}!`
+      : myRank
+        ? "Better luck next time"
+        : "Quiz over";
+  const subcopy = !isQuizEnded
+    ? "You're done. Results lock when the timer hits zero."
+    : isWinner
+      ? payoutResultCopy(viewerPayout)
+      : myRank
+        ? `${ordinal(myRank)} of ${totalPlayers} players`
+        : "Final scores are ready.";
 
   return (
     <main
       className="mq-screen"
-      style={{ minHeight: "100dvh", padding: "16px 0 24px", overflow: "hidden" }}
+      style={{ minHeight: "100dvh", padding: "12px 0 24px" }}
     >
-      {/* Header */}
-      <div style={{ padding: "8px 16px 0", textAlign: "center", position: "relative" }}>
-        <Mango pose={isWinner ? "cheer" : "wave"} size={120} className="mq-bob" />
-        {isWinner && celebrationPayout?.status === "CONFIRMED" ? (
-          <h1 className="mq-h1" style={{ fontSize: 28, marginTop: 4 }}>
-            You won ${formatPrize(celebrationPayout.amount)} USDT!
-          </h1>
-        ) : isWinner ? (
-          <h1 className="mq-h1" style={{ fontSize: 28, marginTop: 4 }}>
-            You finished {ordinal(myRank!)}!
-          </h1>
-        ) : myRank ? (
-          <h1 className="mq-h1" style={{ fontSize: 28, marginTop: 4 }}>
-            You placed #{myRank}
-          </h1>
-        ) : (
-          <h1 className="mq-h1" style={{ fontSize: 28, marginTop: 4 }}>
-            Quiz over
-          </h1>
-        )}
+      <div style={{ padding: "8px 16px 0" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", minHeight: 32 }}>
+          {!isQuizEnded && (
+            <Pill
+              style={{
+                fontSize: 12,
+                padding: "6px 10px",
+                color: "var(--accent-shade)",
+                borderColor: "var(--accent)",
+              }}
+            >
+              <Icon name="clock" size={12} color="var(--accent)" />
+              {formatShortCountdown(remainingMs)}
+            </Pill>
+          )}
+        </div>
+      </div>
+
+      {navLockMessage && !isQuizEnded && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          style={{
+            margin: "0 16px 8px",
+            padding: "10px 12px",
+            borderRadius: 14,
+            background: "var(--accent-tint)",
+            border: "2px solid var(--accent)",
+            color: "var(--accent-shade)",
+            fontFamily: "var(--font-display)",
+            fontWeight: 900,
+            fontSize: 12,
+            textAlign: "center",
+          }}
+        >
+          {navLockMessage}
+        </motion.div>
+      )}
+
+      <div style={{ padding: "0 16px", textAlign: "center", position: "relative" }}>
+        <Mango
+          pose={!isQuizEnded ? "think" : isWinner ? "cheer" : "wave"}
+          size={isQuizEnded ? 112 : 96}
+          className="mq-bob"
+        />
+        <h1 className="mq-h1" style={{ fontSize: 28, marginTop: 4 }}>
+          {headline}
+        </h1>
         <p className="mq-body" style={{ fontSize: 14, marginTop: 4 }}>
-          {myRank
-            ? `${ordinal(myRank)} of ${totalPlayers} players`
-            : "Hang tight — scoring up…"}
+          {subcopy}
         </p>
       </div>
 
-      {/* Podium */}
-      {top3.length > 0 && (
+      {isQuizEnded && top3.length > 0 && (
         <div
           style={{
             padding: "16px 16px 0",
@@ -1311,7 +1538,10 @@ function ResultsScreen({
                 name={r.displayName}
                 score={r.points.toString()}
                 me={r.userId === viewerUserId}
-                amount={payouts.find((p) => p.userId === r.userId)?.amount}
+                amount={
+                  payouts.find((p) => p.userId === r.userId)?.amount ??
+                  quiz.prizeAmounts[i]
+                }
                 avatarEmoji={r.avatarEmoji}
                 avatarColor={r.avatarColor}
               />
@@ -1320,10 +1550,9 @@ function ResultsScreen({
         </div>
       )}
 
-      {/* Stats */}
       <div
         style={{
-          padding: "20px 16px 12px",
+          padding: isQuizEnded ? "20px 16px 12px" : "14px 16px 12px",
           display: "grid",
           gridTemplateColumns: "1fr 1fr 1fr",
           gap: 8,
@@ -1331,11 +1560,7 @@ function ResultsScreen({
       >
         <StatTile
           label="ACCURACY"
-          value={
-            myRow && myRow.answeredCount > 0
-              ? `${Math.round((myRow.correctCount / myRow.answeredCount) * 100)}%`
-              : `${correctCount > 0 ? "—" : "0"}`
-          }
+          value={accuracy}
           icon="check"
           color="var(--primary)"
         />
@@ -1353,11 +1578,22 @@ function ResultsScreen({
         />
       </div>
 
-      {/* Payout celebration */}
+      {isQuizEnded && isWinner && (
+        <PayoutResultCard payout={viewerPayout} amount={winnerAmount} />
+      )}
+
+      <LeaderboardList
+        quiz={quiz}
+        rows={leaderboardRows}
+        payouts={payouts}
+        viewerUserId={viewerUserId}
+        showPayouts={isQuizEnded}
+      />
+
       <AnimatePresence>
-        {celebrationPayout?.status === "CONFIRMED" && celebrationPayout.txHash && (
+        {isQuizEnded && viewerPayout?.status === "CONFIRMED" && (
           <motion.div
-            key={celebrationPayout.txHash}
+            key={viewerPayout.id}
             initial={{ opacity: 0, scale: 0.8, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9 }}
@@ -1374,12 +1610,9 @@ function ResultsScreen({
             }}
           >
             <div className="mq-h2" style={{ color: "white", fontSize: 22 }}>
-              {formatPrize(celebrationPayout.amount)} USDT sent to your wallet
+              {formatPrize(viewerPayout.amount)} USDT sent to your wallet
             </div>
-            <a
-              href={BLOCKSCOUT_TX(celebrationPayout.txHash)}
-              target="_blank"
-              rel="noreferrer"
+            <div
               style={{
                 display: "inline-block",
                 marginTop: 8,
@@ -1390,29 +1623,258 @@ function ResultsScreen({
                 fontFamily: "var(--font-display)",
                 fontWeight: 900,
                 fontSize: 12,
-                textDecoration: "none",
               }}
             >
-              View on Blockscout ✓
-            </a>
+              Payment confirmed
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div style={{ padding: "16px 20px 0", display: "flex", flexDirection: "column", gap: 10 }}>
-        <Link href="/">
-          <MQButton block size="lg">
-            <Icon name="play" size={16} color="white" /> Back to home
-          </MQButton>
-        </Link>
-        <Link href="/leaderboard">
-          <MQButton block size="md" variant="ghost">
-            <Icon name="trophy" size={14} color="var(--ink)" /> See global ranks
-          </MQButton>
-        </Link>
-      </div>
+      {isQuizEnded && (
+        <div style={{ padding: "16px 20px 0", display: "flex", flexDirection: "column", gap: 10 }}>
+          <Link href="/">
+            <MQButton block size="lg">
+              <Icon name="play" size={16} color="white" /> Back to home
+            </MQButton>
+          </Link>
+          <Link href="/leaderboard">
+            <MQButton block size="md" variant="ghost">
+              <Icon name="trophy" size={14} color="var(--ink)" /> See global ranks
+            </MQButton>
+          </Link>
+        </div>
+      )}
     </main>
   );
+}
+
+function PayoutResultCard({
+  payout,
+  amount,
+}: {
+  payout: PublicPayout | null | undefined;
+  amount: string | undefined;
+}) {
+  const meta = payoutMeta(payout?.status ?? "PENDING");
+  return (
+    <div
+      style={{
+        margin: "0 16px 12px",
+        padding: 14,
+        borderRadius: 18,
+        background: meta.bg,
+        border: `2px solid ${meta.border}`,
+        color: meta.color,
+        fontFamily: "var(--font-display)",
+        fontWeight: 900,
+        boxShadow: "0 3px 0 0 var(--line)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15 }}>
+        <Icon name={meta.icon} size={16} color={meta.color} />
+        {amount ? `$${formatPrize(amount)} USDT` : "Prize payout"}
+      </div>
+      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.82 }}>
+        {payoutResultCopy(payout)}
+      </div>
+    </div>
+  );
+}
+
+function LeaderboardList({
+  quiz,
+  rows,
+  payouts,
+  viewerUserId,
+  showPayouts,
+}: {
+  quiz: PublicQuiz;
+  rows: LeaderboardRow[];
+  payouts: PublicPayout[];
+  viewerUserId: string | null;
+  showPayouts: boolean;
+}) {
+  return (
+    <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="mq-eyebrow" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Leaderboard</span>
+        <span>{rows.length} players</span>
+      </div>
+      {rows.map((row, index) => {
+        const rank = index + 1;
+        const payout = payouts.find((p) => p.userId === row.userId);
+        const prizeAmount =
+          payout?.amount ?? (showPayouts ? quiz.prizeAmounts[rank - 1] : undefined);
+        const isPrizeRank = showPayouts && !!prizeAmount && Number(prizeAmount) > 0;
+        const me = row.userId === viewerUserId;
+        return (
+          <div
+            key={row.userId}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "36px 1fr auto",
+              alignItems: "center",
+              gap: 10,
+              minHeight: 68,
+              padding: "10px 12px",
+              borderRadius: 18,
+              background: me ? "var(--primary-tint)" : "var(--card)",
+              border: `2px solid ${me ? "var(--primary)" : "var(--line)"}`,
+              boxShadow: `0 3px 0 0 ${me ? "var(--primary-shade)" : "var(--line)"}`,
+            }}
+          >
+            <div
+              className="mq-num"
+              style={{
+                fontSize: 18,
+                fontWeight: 900,
+                color: rank <= 3 ? "var(--accent-shade)" : "var(--ink-soft)",
+                textAlign: "center",
+              }}
+            >
+              {rank}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <Avatar
+                emoji={row.avatarEmoji}
+                color={row.avatarColor}
+                fallback={row.displayName[0]?.toUpperCase()}
+                size={42}
+                ring={me ? "var(--primary)" : undefined}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 900,
+                    fontSize: 14,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {row.displayName}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--ink-soft)" }}>
+                  {row.points.toLocaleString()} pts · {row.answeredCount} answered
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+              {isPrizeRank && (
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 900,
+                    fontSize: 12,
+                    color: "var(--ink)",
+                  }}
+                >
+                  ${formatPrize(prizeAmount)}
+                </div>
+              )}
+              {isPrizeRank && <PayoutBadge status={payout?.status ?? "PENDING"} />}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PayoutBadge({ status }: { status: PublicPayout["status"] }) {
+  const meta = payoutMeta(status);
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "4px 7px",
+        borderRadius: 999,
+        background: meta.bg,
+        border: `1px solid ${meta.border}`,
+        color: meta.color,
+        fontFamily: "var(--font-display)",
+        fontWeight: 900,
+        fontSize: 10,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <Icon name={meta.icon} size={10} color={meta.color} />
+      {meta.label}
+    </span>
+  );
+}
+
+function formatShortCountdown(ms: number): string {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  if (minutes > 0) return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  return `${seconds}s`;
+}
+
+function payoutResultCopy(payout: PublicPayout | null | undefined): string {
+  if (!payout) return "You won. Payout is being sent.";
+  switch (payout.status) {
+    case "CONFIRMED":
+      return "USDT sent to your wallet.";
+    case "BROADCAST":
+      return "You won. Payout is being finalized.";
+    case "FAILED":
+      return "You won. Payout needs support review.";
+    case "PENDING":
+    case "APPROVED":
+    default:
+      return "You won. Payout is being sent.";
+  }
+}
+
+function payoutMeta(status: PublicPayout["status"]): {
+  label: string;
+  icon: IconName;
+  bg: string;
+  border: string;
+  color: string;
+} {
+  switch (status) {
+    case "CONFIRMED":
+      return {
+        label: "Paid",
+        icon: "check",
+        bg: "var(--primary-tint)",
+        border: "var(--primary)",
+        color: "var(--primary-shade)",
+      };
+    case "BROADCAST":
+      return {
+        label: "Finalizing",
+        icon: "globe",
+        bg: "var(--sky-tint)",
+        border: "var(--sky)",
+        color: "var(--sky-shade)",
+      };
+    case "FAILED":
+      return {
+        label: "Needs review",
+        icon: "wifi-off",
+        bg: "var(--wrong-tint)",
+        border: "var(--wrong)",
+        color: "var(--wrong-shade)",
+      };
+    case "APPROVED":
+    case "PENDING":
+    default:
+      return {
+        label: "Sending",
+        icon: "clock",
+        bg: "var(--accent-tint)",
+        border: "var(--accent)",
+        color: "var(--accent-shade)",
+      };
+  }
 }
 
 function PodiumStack({
@@ -1483,7 +1945,7 @@ function PodiumStack({
   );
 }
 
-function Header({ title, backHref }: { title: string; backHref: string }) {
+function Header({ title, backHref }: { title: string; backHref: string | null }) {
   return (
     <div
       style={{
@@ -1493,23 +1955,27 @@ function Header({ title, backHref }: { title: string; backHref: string }) {
         padding: "8px 16px 12px",
       }}
     >
-      <Link
-        href={backHref}
-        aria-label="Back"
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 12,
-          background: "var(--card)",
-          border: "2px solid var(--line)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 2px 0 0 var(--line)",
-        }}
-      >
-        <Icon name="arrow-left" size={18} color="var(--ink)" />
-      </Link>
+      {backHref ? (
+        <Link
+          href={backHref}
+          aria-label="Back"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 12,
+            background: "var(--card)",
+            border: "2px solid var(--line)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 2px 0 0 var(--line)",
+          }}
+        >
+          <Icon name="arrow-left" size={18} color="var(--ink)" />
+        </Link>
+      ) : (
+        <div style={{ width: 36, height: 36 }} />
+      )}
       <div className="mq-h3" style={{ flex: 1, textAlign: "center" }}>
         {title}
       </div>
@@ -1528,6 +1994,27 @@ function formatDuration(ms: number): string {
   const clock = `${String(hours).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   if (days > 0) return `${days}d ${clock}`;
   return clock;
+}
+
+function formatLobbyTimerLabel(ms: number): string {
+  if (ms < 0) ms = 0;
+  const totalSec = Math.ceil(ms / 1000);
+  const days = Math.floor(totalSec / 86_400);
+  const hours = Math.floor((totalSec % 86_400) / 3_600);
+  const minutes = Math.floor((totalSec % 3_600) / 60);
+  const seconds = totalSec % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  return `${seconds}s`;
+}
+
+function lobbyTimerFontSize(label: string): number {
+  if (label.length <= 3) return 52;
+  if (label.length <= 5) return 46;
+  if (label.length <= 7) return 34;
+  return 28;
 }
 
 function ordinal(n: number): string {

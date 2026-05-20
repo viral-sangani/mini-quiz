@@ -133,7 +133,9 @@ function sumDecimalStrings(arr: string[]): string {
 
 export type LockedMap = Record<PayoutTokenSymbol, string>;
 
-export async function getLockedObligations(): Promise<LockedMap> {
+export async function getLockedObligations(opts?: {
+  excludeQuizId?: string;
+}): Promise<LockedMap> {
   const out: LockedMap = { CELO: "0", USDC: "0", USDT: "0" };
 
   // 1. Prize pools of quizzes that haven't yet ended.
@@ -141,6 +143,7 @@ export async function getLockedObligations(): Promise<LockedMap> {
     where: {
       status: { in: ["SCHEDULED", "LIVE"] },
       archivedAt: null,
+      ...(opts?.excludeQuizId ? { NOT: { id: opts.excludeQuizId } } : {}),
     },
     select: { payoutToken: true, prizeAmounts: true },
   });
@@ -194,10 +197,11 @@ export type TreasurySummary = {
 
 export async function getTreasurySummary(opts?: {
   refresh?: boolean;
+  excludeQuizId?: string;
 }): Promise<TreasurySummary> {
   const [{ balances, fetchedAt }, locked] = await Promise.all([
     getOnchainBalances(opts),
-    getLockedObligations(),
+    getLockedObligations({ excludeQuizId: opts?.excludeQuizId }),
   ]);
   const available: BalanceMap = { CELO: "0", USDC: "0", USDT: "0" };
   for (const sym of Object.keys(available) as PayoutTokenSymbol[]) {
@@ -306,6 +310,8 @@ export async function withdrawFromTreasury(args: {
         value: parseUnits(args.amount, token.decimals),
       } as Parameters<typeof walletClient.sendTransaction>[0]);
     } else if (token.address) {
+      // ERC-20 withdrawals also use CELO for gas. This lets admins withdraw
+      // an exact stablecoin amount without the fee reducing that token first.
       const data = encodeFunctionData({
         abi: ERC20_TRANSFER_ABI,
         functionName: "transfer",
@@ -314,7 +320,6 @@ export async function withdrawFromTreasury(args: {
       txHash = await walletClient.sendTransaction({
         to: token.address,
         data,
-        feeCurrency: token.feeCurrencyAddress,
       } as Parameters<typeof walletClient.sendTransaction>[0]);
     } else {
       return {

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireAdmin } from "../auth.js";
 import {
@@ -9,6 +9,13 @@ import {
   resetAdminPassword,
   revokeAdmin,
 } from "../services/admin-auth.service.js";
+import {
+  checkAdminLoginAllowed,
+  hashForLog,
+  normalizeAdminEmail,
+  recordAdminLoginFailure,
+  recordAdminLoginSuccess,
+} from "../services/admin-login-rate-limit.service.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -29,6 +36,16 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(1),
 });
 
+function requestIp(req: FastifyRequest): string {
+  const cf = req.headers["cf-connecting-ip"];
+  if (typeof cf === "string" && cf.trim()) return cf.trim();
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0]?.trim() || req.ip;
+  }
+  return req.ip;
+}
+
 export async function adminAuthRoutes(app: FastifyInstance) {
   // ─── PUBLIC: login ──────────────────────────────────────────────────────
   // Called server-side by NextAuth's authorize() in apps/admin/lib/auth.ts.
@@ -38,10 +55,40 @@ export async function adminAuthRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid input" });
     }
-    const result = await loginAdmin(parsed.data.email, parsed.data.password);
+    const email = normalizeAdminEmail(parsed.data.email);
+    const ip = requestIp(req);
+    const allowed = await checkAdminLoginAllowed({ email, ip });
+    if (!allowed.ok) {
+      req.log.warn(
+        {
+          emailHash: hashForLog(email),
+          ipHash: hashForLog(ip),
+          userAgent: req.headers["user-agent"] ?? null,
+          reason: allowed.reason,
+        },
+        "admin login rate limited",
+      );
+      reply.header("Retry-After", String(allowed.retryAfterSeconds));
+      return reply.code(429).send({ error: "Invalid email or password" });
+    }
+
+    const result = await loginAdmin(email, parsed.data.password);
     if (!result.ok) {
+      const attempts = await recordAdminLoginFailure({ email, ip });
+      req.log.warn(
+        {
+          emailHash: hashForLog(email),
+          ipHash: hashForLog(ip),
+          userAgent: req.headers["user-agent"] ?? null,
+          reason: "invalid_credentials",
+          emailFailures: attempts.emailFailures,
+          ipFailures: attempts.ipFailures,
+        },
+        "admin login failed",
+      );
       return reply.code(401).send({ error: "Invalid email or password" });
     }
+    await recordAdminLoginSuccess(email);
     return { userId: result.userId, email: result.email, role: result.role };
   });
 

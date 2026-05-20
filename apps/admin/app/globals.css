@@ -185,6 +185,14 @@ body {
     color: white;
     border-color: var(--a-primary);
   }
+  .adm-btn--ai {
+    border: 2px solid transparent;
+    background:
+      linear-gradient(white, white) padding-box,
+      linear-gradient(135deg, var(--a-berry), var(--a-sky)) border-box;
+    color: var(--a-ink);
+    box-shadow: 0 2px 0 rgba(31, 42, 68, 0.16);
+  }
   .adm-btn--danger {
     background: var(--a-wrong);
     color: white;
@@ -404,6 +412,10 @@ body {
     color: var(--a-ink-soft);
     border-bottom: 2px solid transparent;
     cursor: pointer;
+  }
+  .adm-tab:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .adm-tab.active {
     color: var(--a-ink);

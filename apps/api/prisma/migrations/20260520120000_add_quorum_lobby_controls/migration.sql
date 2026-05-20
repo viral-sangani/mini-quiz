@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Quiz" ADD COLUMN     "lobbyOpenLeadMs" INTEGER NOT NULL DEFAULT 300000,
+ADD COLUMN     "minParticipants" INTEGER NOT NULL DEFAULT 1;

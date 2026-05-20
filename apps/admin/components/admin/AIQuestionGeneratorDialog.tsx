@@ -158,7 +158,7 @@ export function AIQuestionGeneratorDialog({
         }}
       >
         <div className="adm-card-h" style={{ flex: "0 0 auto" }}>
-          <h3>Generate questions with AI</h3>
+          <h3>Generate quiz draft with AI</h3>
         </div>
         <div
           style={{
@@ -183,7 +183,7 @@ export function AIQuestionGeneratorDialog({
               />
               <button
                 type="button"
-                className="adm-btn"
+                className="adm-btn adm-btn--ai"
                 onClick={() => void suggest()}
                 disabled={submitting || suggesting}
                 style={{ minWidth: 124 }}
@@ -192,7 +192,7 @@ export function AIQuestionGeneratorDialog({
               </button>
             </div>
             <span style={{ fontSize: 11, color: "var(--a-ink-faint)" }}>
-              Type a topic, or type a theme first and ask AI for ideas.
+              Type a topic, or type a theme first and ask AI for topic options.
             </span>
           </div>
           {topics.length > 0 && (
@@ -370,11 +370,11 @@ export function AIQuestionGeneratorDialog({
           </button>
           <button
             type="button"
-            className="adm-btn adm-btn--primary"
+            className="adm-btn adm-btn--ai"
             onClick={() => void submit()}
             disabled={submitting || suggesting || !topic.trim()}
           >
-            {submitting ? "Generating…" : "Generate"}
+              {submitting ? "Generating…" : "Generate draft"}
           </button>
         </div>
       </div>

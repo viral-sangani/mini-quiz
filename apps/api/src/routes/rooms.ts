@@ -105,7 +105,7 @@ export async function roomRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const quiz = await prisma.quiz.findUnique({
         where: { code: req.params.code.toUpperCase() },
-        select: { id: true },
+        select: { id: true, minParticipants: true, _count: { select: { players: true } } },
       });
       if (!quiz) return reply.code(404).send({ error: "Quiz not found" });
 
@@ -122,6 +122,16 @@ export async function roomRoutes(app: FastifyInstance) {
       const rows = await leaderboard(quiz.id);
       const initial: RoomEvent = { type: "leaderboard", rows };
       reply.raw.write(`data: ${JSON.stringify(initial)}\n\n`);
+      const playerCount = quiz._count.players;
+      const lobbyInitial: RoomEvent = {
+        type: "lobby_updated",
+        quizId: quiz.id,
+        playerCount,
+        minParticipants: quiz.minParticipants,
+        playersNeeded: Math.max(0, quiz.minParticipants - playerCount),
+        quorumMet: playerCount >= quiz.minParticipants,
+      };
+      reply.raw.write(`data: ${JSON.stringify(lobbyInitial)}\n\n`);
 
       const unsub = subscribe(quiz.id, {
         id: `${quiz.id}-${Date.now()}-${Math.random()}`,

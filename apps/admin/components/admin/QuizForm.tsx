@@ -25,6 +25,8 @@ export type QuizFormValue = {
   scheduledStartLocal: string;
   questionTimeMs: number;
   prizeAmounts: string[];
+  minParticipants: number;
+  lobbyOpenLeadMs: number;
   difficulty: Difficulty;
   coverColor: CoverColor;
   payoutToken: PayoutTokenSymbol;
@@ -41,6 +43,8 @@ export type QuizFormSubmit = {
   scheduledStart: string | null;
   questionTimeMs: number;
   prizeAmounts: string[];
+  minParticipants: number;
+  lobbyOpenLeadMs: number;
   difficulty: Difficulty;
   coverColor: CoverColor;
   payoutToken: PayoutTokenSymbol;
@@ -51,6 +55,10 @@ const DIFFICULTIES: Difficulty[] = ["EASY", "MEDIUM", "HARD"];
 const TABS = ["basics", "questions", "prizes", "review"] as const;
 type QuizFormTab = (typeof TABS)[number];
 const CHOICE_IDS = ["a", "b", "c", "d"] as const;
+const LOBBY_PRESETS = [
+  { label: "5 min", value: 5 * 60_000 },
+  { label: "15 min", value: 15 * 60_000 },
+] as const;
 
 function defaultValue(): QuizFormValue {
   return {
@@ -59,6 +67,8 @@ function defaultValue(): QuizFormValue {
     scheduledStartLocal: "",
     questionTimeMs: 15_000,
     prizeAmounts: ["50", "25", "15", "5", "5", "5", "5", "5", "5", "5"],
+    minParticipants: 1,
+    lobbyOpenLeadMs: 5 * 60_000,
     difficulty: "MEDIUM",
     coverColor: "primary",
     payoutToken: "USDT",
@@ -91,6 +101,8 @@ export function fromAdminQuiz(
       : "",
     questionTimeMs: quiz.questionTimeMs,
     prizeAmounts: quiz.prizeAmounts,
+    minParticipants: quiz.minParticipants,
+    lobbyOpenLeadMs: quiz.lobbyOpenLeadMs,
     difficulty: quiz.difficulty,
     coverColor: (quiz.coverColor as CoverColor) ?? "primary",
     payoutToken: ((quiz as unknown as { payoutToken?: PayoutTokenSymbol })
@@ -123,13 +135,27 @@ export function QuizForm({
   const [v, setV] = useState<QuizFormValue>(initial ?? defaultValue());
   const [tab, setTab] = useState<QuizFormTab>("basics");
   const [aiOpen, setAiOpen] = useState(false);
+  const [aiDraft, setAiDraft] = useState<AIGenerationContext | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const patch = (p: Partial<QuizFormValue>) => setV((prev) => ({ ...prev, ...p }));
   const tabIndex = TABS.indexOf(tab);
-  const goBack = () => setTab(TABS[Math.max(0, tabIndex - 1)]!);
-  const goNext = () => setTab(TABS[Math.min(TABS.length - 1, tabIndex + 1)]!);
+  const scheduleMissing = !v.scheduledStartLocal.trim();
+  const requireScheduleBeforeLeavingBasics = (nextTab: QuizFormTab): boolean => {
+    if (tab === "basics" && nextTab !== "basics" && scheduleMissing) {
+      setError("Schedule start time is required before continuing");
+      return false;
+    }
+    return true;
+  };
+  const goToTab = (nextTab: QuizFormTab) => {
+    if (!requireScheduleBeforeLeavingBasics(nextTab)) return;
+    setError(null);
+    setTab(nextTab);
+  };
+  const goBack = () => goToTab(TABS[Math.max(0, tabIndex - 1)]!);
+  const goNext = () => goToTab(TABS[Math.min(TABS.length - 1, tabIndex + 1)]!);
 
   const onAIGenerated = (incoming: AIQuestion[], ctx: AIGenerationContext) => {
     const normalized = incoming.map((q) => {
@@ -156,6 +182,7 @@ export function QuizForm({
         ? v.description
         : `${ctx.count} ${ctx.difficulty.toLowerCase()} questions on ${ctx.topic}.`,
     });
+    setAiDraft(ctx);
     setAiOpen(false);
     setTab("questions");
   };
@@ -165,6 +192,11 @@ export function QuizForm({
     if (!v.title.trim()) {
       setTab("basics");
       setError("Game title is required");
+      return;
+    }
+    if (scheduleMissing) {
+      setTab("basics");
+      setError("Schedule start time is required before creating the game");
       return;
     }
     if (v.questions.length < 1) {
@@ -202,6 +234,8 @@ export function QuizForm({
           : null,
         questionTimeMs: v.questionTimeMs,
         prizeAmounts: v.prizeAmounts.map((s) => s.trim()).filter(Boolean),
+        minParticipants: Math.max(1, Math.floor(v.minParticipants)),
+        lobbyOpenLeadMs: v.lobbyOpenLeadMs,
         difficulty: v.difficulty,
         coverColor: v.coverColor,
         payoutToken: v.payoutToken,
@@ -261,42 +295,13 @@ export function QuizForm({
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => goToTab(id)}
+            disabled={tab === "basics" && id !== "basics" && scheduleMissing}
             className={`adm-tab${tab === id ? " active" : ""}`}
           >
             {i + 1}. {id.charAt(0).toUpperCase() + id.slice(1)}
           </button>
         ))}
-        <div style={{ flex: 1 }} />
-        {tabIndex > 0 && (
-          <button
-            type="button"
-            onClick={goBack}
-            className="adm-btn"
-            style={{ marginBottom: 8 }}
-          >
-            Back
-          </button>
-        )}
-        {tabIndex < TABS.length - 1 && (
-          <button
-            type="button"
-            onClick={goNext}
-            className="adm-btn"
-            style={{ marginBottom: 8 }}
-          >
-            Next
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={update}
-          disabled={submitting}
-          className="adm-btn adm-btn--primary"
-          style={{ marginBottom: 8 }}
-        >
-          {submitting ? "Saving…" : submitLabel}
-        </button>
       </div>
 
       {error && (
@@ -418,8 +423,65 @@ export function QuizForm({
                       type="datetime-local"
                       className="adm-input"
                       value={v.scheduledStartLocal}
-                      onChange={(e) => patch({ scheduledStartLocal: e.target.value })}
+                      onChange={(e) => {
+                        patch({ scheduledStartLocal: e.target.value });
+                        if (error?.startsWith("Schedule start time")) setError(null);
+                      }}
                     />
+                    {scheduleMissing && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          color: "var(--a-wrong)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Required before continuing.
+                      </div>
+                    )}
+                  </div>
+                  <div className="adm-field">
+                    <label>Minimum participants</label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="adm-input"
+                      value={v.minParticipants}
+                      onChange={(e) =>
+                        patch({ minParticipants: Math.max(1, Number(e.target.value) || 1) })
+                      }
+                    />
+                  </div>
+                  <div className="adm-field">
+                    <label>Lobby opens</label>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {LOBBY_PRESETS.map((preset) => (
+                        <button
+                          key={preset.value}
+                          type="button"
+                          onClick={() => patch({ lobbyOpenLeadMs: preset.value })}
+                          className={`adm-btn adm-btn--sm${v.lobbyOpenLeadMs === preset.value ? " adm-btn--primary" : ""}`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      gridColumn: "1/-1",
+                      padding: 12,
+                      borderRadius: 8,
+                      background: "var(--a-bg)",
+                      border: "1px solid var(--a-line)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "var(--a-ink-soft)",
+                    }}
+                  >
+                    Players can join from {Math.round(v.lobbyOpenLeadMs / 60_000)} minutes before start.
+                    If fewer than {v.minParticipants} join by start time, the lobby stays open until quorum is reached.
                   </div>
                 </div>
               </div>
@@ -428,15 +490,59 @@ export function QuizForm({
 
           {tab === "questions" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {aiDraft && (
+                <div
+                  className="adm-card"
+                  style={{
+                    borderColor: "var(--a-primary)",
+                    background: "var(--a-primary-tint)",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 900, color: "var(--a-primary)" }}>
+                        AI draft ready
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--a-ink-soft)", marginTop: 2 }}>
+                        {aiDraft.count} {aiDraft.difficulty.toLowerCase()} questions on {aiDraft.topic}. Review and edit before creating the game.
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="adm-btn adm-btn--sm adm-btn--ai"
+                        onClick={() => setAiOpen(true)}
+                      >
+                        ✨ Regenerate
+                      </button>
+                      <button
+                        type="button"
+                        className="adm-btn adm-btn--sm adm-btn--primary"
+                        onClick={() => setTab("review")}
+                      >
+                        Approve draft
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div className="adm-h3">Questions ({v.questions.length})</div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
                     type="button"
-                    className="adm-btn adm-btn--sm"
+                    className="adm-btn adm-btn--sm adm-btn--ai"
                     onClick={() => setAiOpen(true)}
                   >
-                    Generate with AI
+                    ✨ Generate with AI
                   </button>
                   <button
                     type="button"
@@ -665,6 +771,10 @@ export function QuizForm({
                   label="Time per question"
                   value={`${v.questionTimeMs / 1000}s`}
                 />
+                <ReviewRow
+                  label="Quorum"
+                  value={`${v.minParticipants} players · ${Math.round(v.lobbyOpenLeadMs / 60_000)} min lobby`}
+                />
                 <ReviewRow label="Questions" value={String(v.questions.length)} />
                 <ReviewRow
                   label="Pool ranks"
@@ -676,6 +786,55 @@ export function QuizForm({
         </div>
 
         <PreviewCard v={v} totalPool={totalPool} />
+      </div>
+
+      <div
+        className="adm-card"
+        style={{
+          marginTop: 16,
+          padding: 14,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--a-ink-soft)" }}>
+          Step {tabIndex + 1} of {TABS.length}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={() => setAiOpen(true)}
+            className="adm-btn adm-btn--ai"
+          >
+            ✨ AI
+          </button>
+          {tabIndex > 0 && (
+            <button type="button" onClick={goBack} className="adm-btn">
+              Back
+            </button>
+          )}
+          {tabIndex < TABS.length - 1 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={tab === "basics" && scheduleMissing}
+              className="adm-btn adm-btn--primary"
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={update}
+              disabled={submitting}
+              className="adm-btn adm-btn--primary"
+            >
+              {submitting ? "Saving…" : submitLabel}
+            </button>
+          )}
+        </div>
       </div>
 
       <AIQuestionGeneratorDialog
@@ -744,6 +903,9 @@ function PreviewCard({
           </div>
           <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.9, marginBottom: 10 }}>
             {v.questions.length} questions · {v.difficulty.charAt(0) + v.difficulty.slice(1).toLowerCase()} · ${Number(totalPool.toFixed(6))} pool
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.9, marginBottom: 10 }}>
+            {v.minParticipants}+ players · lobby opens {Math.round(v.lobbyOpenLeadMs / 60_000)}m early
           </div>
           <div
             style={{

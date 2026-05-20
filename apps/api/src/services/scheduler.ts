@@ -73,10 +73,18 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
       scheduledStart: { lte: now },
       archivedAt: null,
     },
-    select: { id: true, questionTimeMs: true, questions: { select: { id: true } } },
+    select: {
+      id: true,
+      questionTimeMs: true,
+      minParticipants: true,
+      _count: { select: { questions: true, players: true } },
+    },
   });
   for (const q of toStart) {
-    const durationMs = q.questionTimeMs * q.questions.length + 5_000;
+    if (q._count.players < q.minParticipants) {
+      continue;
+    }
+    const durationMs = q.questionTimeMs * q._count.questions + 5_000;
     const endsAt = new Date(now.getTime() + durationMs);
     const updated = await prisma.quiz.updateMany({
       where: { id: q.id, status: "SCHEDULED" },
