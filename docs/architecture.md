@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-20** (live quiz quorum + admin login rate limits).
+> Last updated: **2026-05-22** (Phase 1 Redis fanout + worker split).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -27,13 +27,12 @@
 │ │  ingress-nginx (hostNetwork) ─► api Service           │      │
 │ │                                  ▲                    │      │
 │ │  ┌─────────────┐                  │                   │      │
-│ │  │ apps/api    │ ◄─ DATABASE_URL─┼─► Postgres (CNPG) │      │
+│ │  │ apps/api    │ ◄─ DATABASE_URL─┼─► PgBouncer       │      │
 │ │  │ Fastify     │ ◄─ REDIS_URL ───┼─► Redis (Bitnami) │      │
 │ │  │ Prisma      │                  │                   │      │
-│ │  │ in-proc     │                  │                   │      │
-│ │  │  scheduler  │                  │                   │      │
-│ │  │  SSE broker │                  │                   │      │
+│ │  │ SSE clients │                  │                   │      │
 │ │  └─────────────┘                  │                   │      │
+│ │  api-worker ───► scheduler/payouts ┘                   │      │
 │ └──────────────────────────────────────────────────────┘      │
 │                         │                                      │
 │                  viem (CELO gas for prize transfers)           │
@@ -60,13 +59,13 @@
   - `admin-stats.admin.ts` — dashboard KPIs.
   - `ai-gen.admin.ts` — admin-only AI topic suggestions + question generation.
 - Services (`apps/api/src/services/`): business logic, called by routes.
-- **Stateful runtime singletons** (these are why the API can't be
-  serverless and can't horizontally scale today):
-  - `scheduler.ts` — `setTimeout` loop, ticks every 1s. Flips quizzes
-    SCHEDULED → LIVE → ENDED, broadcasts SSE events, enqueues auto-payouts.
-  - `sse/broker.ts` — `globalThis.__sseRegistry` Map of `quizId →
-    Set<client>`. SSE clients subscribed to a quiz get fanout from
-    `broadcast(quizId, event)`.
+- Runtime split:
+  - `server.ts` starts Fastify and Redis-backed SSE fanout only.
+  - `worker.ts` starts the scheduler and payout background work.
+  - `sse/broker.ts` keeps local SSE clients per pod, but broadcasts through
+    Redis pub/sub so any API pod can deliver events from any other pod.
+  - `live-score.service.ts` stores LIVE leaderboard rows in Redis Sorted Sets
+    and hashes. Postgres remains the final source of truth.
 
 ### `apps/quiz` — MiniPay player
 
@@ -135,7 +134,8 @@ read the schema. Key relationships at a glance:
 6. Each question: server broadcasts `question_started` with
    `endsAt` timestamp. Frontend counts down locally.
 7. Player answers: `POST /rooms/:code/answer`. Server scores it,
-   inserts `Answer`, broadcasts `leaderboard` + `answer_distribution`.
+   inserts `Answer`, refreshes that player's Redis live score, and broadcasts
+   a capped `leaderboard` + `answer_distribution`.
 8. Question time-up: server broadcasts `question_ended` with
    correct answer; client shows reveal.
 9. Last question + buffer: scheduler tick flips quiz to ENDED →
@@ -157,6 +157,23 @@ read the schema. Key relationships at a glance:
 8. Admin live-monitor page consumes SSE for real-time KPIs +
    answer distribution.
 
+### Live leaderboard payloads
+
+`GET /rooms/:code/leaderboard` returns a capped leaderboard response:
+`rows`, `totalPlayers`, `limit`, `partial`, and an optional `viewer` row when
+`viewerUserId` is provided and the viewer is outside the returned top rows.
+The default limit is 50 and the public max is 100. SSE `leaderboard` events
+use the same capped `rows` plus `totalPlayers`, `limit`, and `partial`; they
+do not include viewer-specific rows.
+
+Player polling is now a fallback instead of the primary realtime path: after
+the initial hydrate, the player app polls only when SSE is disconnected or no
+data event has arrived for 10 seconds.
+
+For LIVE games, leaderboard reads use Redis when the live score set is fully
+seeded. If Redis is unavailable, incomplete, or the quiz is not LIVE, the API
+falls back to the DB aggregation path.
+
 ### Auto-payout (LIVE → ENDED)
 
 1. Scheduler tick sees `endedAt <= now` for a LIVE quiz.
@@ -165,8 +182,7 @@ read the schema. Key relationships at a glance:
    - Reads top-N from `leaderboard(quizId)` where N =
      `quiz.prizeAmounts.length`.
    - For each ranked player with `walletAddress != null`: creates
-     `Payout` row at `APPROVED`, then immediately calls
-     `broadcastPayout(id)` which signs + sends the prize token transfer via
+     `Payout` row at `APPROVED`, then the worker signs + sends the prize token transfer via
      viem. ERC-20 prize transfers omit `feeCurrency`, so gas is paid in CELO
      and exact USDT/USDC prize balances can be sent without the gas fee
      reducing that same token first.
@@ -175,11 +191,9 @@ read the schema. Key relationships at a glance:
      retry via `POST /admin/payouts/:id/approve`.
 4. Best-effort badge eval runs after.
 
-**WARNING**: This whole pipeline runs **inline on the scheduler tick**.
-Each on-chain transfer blocks the tick for 1–3s. With many winners +
-the in-process SSE broker on the same event loop, the tick gets
-delayed and live SSE updates lag. Move payouts to a worker queue
-before scaling player count past ~20k concurrent.
+The scheduler and payout confirmation loop run in the worker pod, not in web
+API pods. Admin manual payout retries publish worker commands when Redis is
+available and fall back to inline processing only for local/dev without Redis.
 
 ## Environment variables
 
@@ -196,7 +210,8 @@ boot). Frontend env vars in each app's `next.config.mjs` and
 - **Cluster-injected**: `PGUSER`, `PGPASSWORD`, `REDIS_PASSWORD`,
   `DATABASE_URL`, `REDIS_URL` — composed in
   `deploy/charts/api/templates/deployment.yaml` from the `miniquiz-pg-app`
-  + `redis-auth` Secrets.
+  + `redis-auth` Secrets. Web and worker pods use PgBouncer; migration and
+  seed Jobs use the direct CNPG primary service.
 
 ## Storage usage
 

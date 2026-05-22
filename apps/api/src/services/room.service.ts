@@ -1,9 +1,19 @@
 import { Prisma } from "../db.js";
-import type { AdminLiveState, Choice, LeaderboardRow } from "@mini-quiz/shared";
+import type {
+  AdminLiveState,
+  Choice,
+  LeaderboardResponse,
+  LeaderboardRow,
+  LeaderboardViewerRow,
+} from "@mini-quiz/shared";
 import { computePoints, playersNeeded } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
 import { enqueuePostAnswerBroadcasts } from "./broadcast-queue.js";
+import {
+  getLiveLeaderboardFromRedis,
+  refreshLiveScoreForPlayer,
+} from "./live-score.service.js";
 
 export type JoinResult =
   | { quizId: string; roomPlayerId: string; userId: string }
@@ -145,11 +155,11 @@ export type SubmitError =
 
 // Live-quiz answer submission. Lean hot path: validates ownership +
 // per-question deadline, persists the Answer + totalXp atomically, returns
-// {isCorrect, points} immediately. Side-effects (leaderboard recompute,
-// answer-distribution recompute, "Alice answered" broadcast) are enqueued
-// into the per-quiz coalesced broadcast queue and fan out on a 250-500ms
-// tick instead of inline. Critical for scale: a hot question at 100k players
-// would otherwise trigger 100k full leaderboard recomputes.
+// {isCorrect, points} immediately. Side-effects (capped leaderboard recompute
+// and answer-distribution recompute) are enqueued into the per-quiz coalesced
+// broadcast queue and fan out on a 500ms tick instead of inline. Critical for
+// scale: a hot question at 100k players would otherwise trigger 100k full
+// leaderboard recomputes.
 //
 // Security:
 //   - walletAddress must match roomPlayer.user.walletAddress (prevents
@@ -259,13 +269,10 @@ export async function submitAnswer(
 
   // Defer all fan-out work. The user already has their feedback; everyone
   // else can wait the broadcast tick.
+  await refreshLiveScoreForPlayer(quiz.id, roomPlayer.id);
   enqueuePostAnswerBroadcasts({
     quizId: quiz.id,
     questionId: question.id,
-    questionPosition: question.position,
-    userId: roomPlayer.userId,
-    displayName: roomPlayer.user.displayName ?? "Player",
-    isCorrect,
   });
 
   return { isCorrect, points };
@@ -345,54 +352,167 @@ export async function getLiveState(
     distribution,
     answeredCount,
     avgCorrectPct,
-    leaderboard: await leaderboard(quiz.id),
+    leaderboard: (await leaderboard(quiz.id)).rows,
   };
 }
 
-export async function leaderboard(quizId: string): Promise<LeaderboardRow[]> {
-  const rows = await prisma.roomPlayer.findMany({
-    where: { quizId, user: { deletedAt: null } },
-    include: {
-      user: {
-        select: {
-          id: true,
-          displayName: true,
-          walletAddress: true,
-          avatarEmoji: true,
-          avatarColor: true,
-        },
-      },
-      answers: {
-        select: { points: true, isCorrect: true, timeTakenMs: true },
-      },
+export const DEFAULT_LEADERBOARD_LIMIT = 50;
+export const MAX_PUBLIC_LEADERBOARD_LIMIT = 100;
+
+export function normalizeLeaderboardLimit(limit: unknown): number {
+  const n = Number(limit);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_LEADERBOARD_LIMIT;
+  return Math.min(MAX_PUBLIC_LEADERBOARD_LIMIT, Math.max(1, Math.floor(n)));
+}
+
+type RankedLeaderboardRow = LeaderboardRow & {
+  rank: number;
+  totalPlayers: number;
+};
+
+type DbLeaderboardRow = {
+  rank: number;
+  totalPlayers: number;
+  userId: string;
+  roomPlayerId: string;
+  displayName: string | null;
+  walletAddress: string | null;
+  avatarEmoji: string | null;
+  avatarColor: string | null;
+  points: number;
+  correctCount: number;
+  answeredCount: number;
+  totalTimeMs: number;
+};
+
+function toRankedRow(row: DbLeaderboardRow): RankedLeaderboardRow {
+  return {
+    rank: Number(row.rank),
+    totalPlayers: Number(row.totalPlayers),
+    userId: row.userId,
+    roomPlayerId: row.roomPlayerId,
+    displayName: row.displayName ?? "Player",
+    walletAddress: row.walletAddress,
+    avatarEmoji: row.avatarEmoji,
+    avatarColor: row.avatarColor,
+    points: Number(row.points),
+    correctCount: Number(row.correctCount),
+    answeredCount: Number(row.answeredCount),
+    totalTimeMs: Number(row.totalTimeMs),
+  };
+}
+
+async function rankedLeaderboardRows(args: {
+  quizId: string;
+  limit?: number | null;
+  viewerUserId?: string | null;
+}): Promise<RankedLeaderboardRow[]> {
+  const limitClause =
+    args.limit == null
+      ? Prisma.empty
+      : Prisma.sql`WHERE "rank" <= ${args.limit} ${args.viewerUserId ? Prisma.sql`OR "userId" = ${args.viewerUserId}` : Prisma.empty}`;
+
+  const rows = await prisma.$queryRaw<DbLeaderboardRow[]>`
+    WITH scores AS (
+      SELECT
+        rp.id AS "roomPlayerId",
+        rp."joinedAt" AS "joinedAt",
+        u.id AS "userId",
+        u."displayName" AS "displayName",
+        u."walletAddress" AS "walletAddress",
+        u."avatarEmoji" AS "avatarEmoji",
+        u."avatarColor" AS "avatarColor",
+        COALESCE(SUM(a.points), 0)::int AS "points",
+        COALESCE(SUM(CASE WHEN a."isCorrect" THEN 1 ELSE 0 END), 0)::int AS "correctCount",
+        COUNT(a.id)::int AS "answeredCount",
+        COALESCE(SUM(a."timeTakenMs"), 0)::int AS "totalTimeMs"
+      FROM "RoomPlayer" rp
+      JOIN "User" u ON u.id = rp."userId" AND u."deletedAt" IS NULL
+      LEFT JOIN "Answer" a ON a."roomPlayerId" = rp.id
+      WHERE rp."quizId" = ${args.quizId}
+      GROUP BY rp.id, rp."joinedAt", u.id
+    ),
+    ranked AS (
+      SELECT
+        ROW_NUMBER() OVER (
+          ORDER BY "points" DESC, "totalTimeMs" ASC, "joinedAt" ASC
+        )::int AS "rank",
+        COUNT(*) OVER ()::int AS "totalPlayers",
+        *
+      FROM scores
+    )
+    SELECT
+      "rank",
+      "totalPlayers",
+      "userId",
+      "roomPlayerId",
+      "displayName",
+      "walletAddress",
+      "avatarEmoji",
+      "avatarColor",
+      "points",
+      "correctCount",
+      "answeredCount",
+      "totalTimeMs"
+    FROM ranked
+    ${limitClause}
+    ORDER BY "rank" ASC
+  `;
+  return rows.map(toRankedRow);
+}
+
+export async function leaderboard(
+  quizId: string,
+  opts: { limit?: number; viewerUserId?: string | null; capLimit?: boolean } = {},
+): Promise<LeaderboardResponse> {
+  const limit =
+    opts.capLimit === false
+      ? Math.max(1, Math.floor(Number(opts.limit ?? DEFAULT_LEADERBOARD_LIMIT)))
+      : normalizeLeaderboardLimit(opts.limit);
+  const quiz = await prisma.quiz.findUnique({
+    where: { id: quizId },
+    select: {
+      status: true,
+      _count: { select: { players: true } },
     },
   });
-  const out: LeaderboardRow[] = rows.map((rp) => {
-    let points = 0;
-    let correctCount = 0;
-    let totalTimeMs = 0;
-    for (const a of rp.answers) {
-      points += a.points;
-      if (a.isCorrect) correctCount += 1;
-      totalTimeMs += a.timeTakenMs;
-    }
-    return {
-      userId: rp.user.id,
-      roomPlayerId: rp.id,
-      displayName: rp.user.displayName ?? "Player",
-      walletAddress: rp.user.walletAddress,
-      avatarEmoji: rp.user.avatarEmoji,
-      avatarColor: rp.user.avatarColor,
-      points,
-      correctCount,
-      answeredCount: rp.answers.length,
-      totalTimeMs,
-    };
+  if (quiz?.status === "LIVE") {
+    const live = await getLiveLeaderboardFromRedis({
+      quizId,
+      limit,
+      viewerUserId: opts.viewerUserId ?? null,
+    });
+    if (live && live.totalPlayers >= quiz._count.players) return live;
+  }
+  const rankedRows = await rankedLeaderboardRows({
+    quizId,
+    limit,
+    viewerUserId: opts.viewerUserId ?? null,
   });
-  out.sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (a.totalTimeMs !== b.totalTimeMs) return a.totalTimeMs - b.totalTimeMs;
-    return 0;
-  });
-  return out;
+  const totalPlayers = rankedRows[0]?.totalPlayers ?? 0;
+  const topRows = rankedRows.filter((row) => row.rank <= limit);
+  const viewer =
+    opts.viewerUserId == null
+      ? null
+      : rankedRows.find(
+          (row) => row.userId === opts.viewerUserId && row.rank > limit,
+        ) ?? null;
+
+  return {
+    rows: topRows.map(({ rank: _rank, totalPlayers: _totalPlayers, ...row }) => row),
+    totalPlayers,
+    limit,
+    partial: totalPlayers > topRows.length,
+    viewer: viewer ? toViewerRow(viewer) : null,
+  };
+}
+
+export async function fullLeaderboardRows(quizId: string): Promise<LeaderboardRow[]> {
+  const rows = await rankedLeaderboardRows({ quizId, limit: null });
+  return rows.map(({ rank: _rank, totalPlayers: _totalPlayers, ...row }) => row);
+}
+
+function toViewerRow(row: RankedLeaderboardRow): LeaderboardViewerRow {
+  const { totalPlayers: _totalPlayers, ...viewer } = row;
+  return viewer;
 }

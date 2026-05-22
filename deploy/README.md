@@ -15,7 +15,7 @@ deploy/
 │   ├── cert-manager.yaml          # wave 1
 │   ├── ingress-nginx.yaml         # wave 1
 │   ├── cnpg-operator.yaml         # wave 2
-│   ├── postgres-cluster.yaml      # wave 3
+│   ├── postgres-cluster.yaml      # wave 3 — CNPG Cluster + Pooler
 │   ├── redis.yaml                 # wave 3
 │   └── api.yaml                   # wave 4
 ├── charts/
@@ -39,7 +39,8 @@ grep -rl viral-sangani deploy/ | xargs sed -i '' 's|viral-sangani|viral-sangani|
 
 Push to `main` with changes under `apps/api/**` or `packages/shared/**`. The
 `api-image` GitHub Actions workflow builds, pushes to ghcr.io, and bumps
-`charts/api/values.yaml` `image.tag`. Argo notices within ~30s and rolls.
+`charts/api/values.yaml` `image.tag`. Argo notices within ~30s and rolls the
+web Deployment, worker Deployment, and PreSync migration/seed Jobs.
 
 ## Verify
 

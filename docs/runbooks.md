@@ -1,6 +1,6 @@
 # Runbooks
 
-> Last updated: **2026-05-20**.
+> Last updated: **2026-05-22**.
 > Update triggers: new procedure, change to existing one, command no
 > longer works as written. Each runbook is meant to be runnable as-is.
 
@@ -291,18 +291,82 @@ Don't wait until traffic arrives:
 
 ```bash
 # 30 min before the scheduled game
-kubectl -n api scale deployment/api --replicas=4
+kubectl -n api patch hpa api --type merge -p '{"spec":{"minReplicas":4,"maxReplicas":4}}'
 kubectl -n api get pods -w     # confirm 4 ready
 
 # Right after the game (or 15 min after if testing)
-kubectl -n api scale deployment/api --replicas=1
+kubectl -n api patch hpa api --type merge -p '{"spec":{"minReplicas":2,"maxReplicas":4}}'
 ```
 
-**Caveat (current state)**: SSE fan-out is in-process. Multiple api
-replicas will only help with HTTP throughput, not SSE concurrency
-across pods. Until SSE moves to Redis pub/sub (see `decisions.md`),
-keep replicas=1 during a game; scale up only for the lobby/onboarding
-HTTP burst.
+**Current state**: Phase 1 uses Redis pub/sub for cross-pod SSE fanout, one
+worker pod for scheduler/payout background work, and PgBouncer for app
+Postgres connections. Keep the worker at exactly one replica.
+
+## Phase 0 scalability checks
+
+Metrics-server is deployed through Argo so Kubernetes resource metrics are
+available:
+
+```bash
+kubectl top nodes
+kubectl -n api top pods
+kubectl -n data top pods
+```
+
+Run the lightweight Phase 0 load test against local or staging API targets.
+Use a scheduled/live quiz code and tune users/concurrency per rehearsal:
+
+```bash
+PHASE0_BASE_URL=http://localhost:4000 \
+PHASE0_CODE=<room-code> \
+PHASE0_USERS=500 \
+PHASE0_CONCURRENCY=50 \
+pnpm loadtest:phase0
+```
+
+For promoted-game rehearsals, repeat with `PHASE0_USERS=2000` and then
+`PHASE0_USERS=5000`. During Phase 1, run these with 2 api web pods and
+1 worker pod before raising HPA max to 4.
+
+## Phase 1 scalability checks
+
+Verify ownership and connection routing after deploy:
+
+```bash
+kubectl -n data get pooler miniquiz-pg-pooler-rw
+kubectl -n api get deploy api api-worker
+kubectl -n api get hpa api
+kubectl -n api logs deploy/api-worker --tail=50
+```
+
+Expected:
+- `deploy/api` has 2-4 web replicas managed by HPA.
+- `deploy/api-worker` has exactly 1 replica.
+- web and worker pods use `miniquiz-pg-pooler-rw` in `DATABASE_URL`.
+- migration and seed Jobs use `miniquiz-pg-rw` directly.
+
+Redis checks:
+
+```bash
+kubectl -n data exec -it redis-master-0 -- redis-cli -a "$REDIS_PASSWORD" INFO clients
+kubectl -n data exec -it redis-master-0 -- redis-cli -a "$REDIS_PASSWORD" INFO memory
+kubectl -n data exec -it redis-master-0 -- redis-cli -a "$REDIS_PASSWORD" PUBSUB CHANNELS 'room:*:events'
+kubectl -n data exec -it redis-master-0 -- redis-cli -a "$REDIS_PASSWORD" LLEN worker:commands
+```
+
+Rollback to single-pod web mode:
+
+```bash
+# Edit deploy/charts/api/values.yaml:
+# hpa.minReplicas: 1
+# hpa.maxReplicas: 1
+# worker.enabled: true
+git add deploy/charts/api/values.yaml
+git commit -m "rollback: pin api hpa to one pod"
+git push viral HEAD:main
+kubectl -n api rollout status deploy/api
+kubectl -n api rollout status deploy/api-worker
+```
 
 ## Restart the api without redeploying
 

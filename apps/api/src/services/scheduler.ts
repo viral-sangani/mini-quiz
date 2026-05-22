@@ -3,7 +3,9 @@ import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
 import { evaluateBadgesAfterQuiz } from "./badge.service.js";
 import { finalizePastDaily, todayUtcDate } from "./daily.service.js";
+import { expireLiveScores, seedLiveScoresFromRows } from "./live-score.service.js";
 import { enqueueAutoPayouts, resumeInFlightPayouts } from "./payout.service.js";
+import { fullLeaderboardRows } from "./room.service.js";
 
 // Single-VPS cron. Ticks every TICK_INTERVAL_MS.
 // 1. (Once per UTC date) Daily housekeeping — finalize yesterday's DAILY,
@@ -91,6 +93,7 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
       data: { status: "LIVE", startedAt: now, endedAt: endsAt },
     });
     if (updated.count > 0) {
+      await seedLiveScoresFromRows(q.id, await fullLeaderboardRows(q.id));
       log.info({ quizId: q.id }, "scheduler: quiz LIVE");
       broadcast(q.id, {
         type: "quiz_started",
@@ -115,6 +118,7 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
     if (updated.count > 0) {
       log.info({ quizId: q.id }, "scheduler: quiz ENDED");
       broadcast(q.id, { type: "quiz_ended", quizId: q.id, endedAt: now.toISOString() });
+      await expireLiveScores(q.id);
       await enqueueAutoPayouts(q.id);
       try {
         await evaluateBadgesAfterQuiz(q.id);

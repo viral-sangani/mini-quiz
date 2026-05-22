@@ -1,4 +1,4 @@
-import type { LeaderboardRow } from "@mini-quiz/shared";
+import type { LeaderboardResponse } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
 import { leaderboard } from "./room.service.js";
@@ -18,20 +18,11 @@ import { leaderboard } from "./room.service.js";
 // in-process queue with Redis pub/sub (CLAUDE.md house rule #6).
 
 const FLUSH_INTERVAL_MS = 500;
-const ANSWER_SUBMITTED_FLUSH_MS = 250; // cosmetic events flush slightly faster
 
 type Pending = {
   // Scheduled flush handle. Null when no flush is in flight.
   leaderboardTimer: NodeJS.Timeout | null;
   distributionTimer: NodeJS.Timeout | null;
-  answerSubmittedTimer: NodeJS.Timeout | null;
-  // Buffered "Player X answered Q3" events for the current flush window.
-  answerSubmittedBuffer: {
-    userId: string;
-    displayName: string;
-    questionPosition: number;
-    isCorrect: boolean;
-  }[];
   // Tracks which question's distribution to re-aggregate next flush. Stays
   // pinned to the most recently answered question, which is the one admins
   // are currently watching.
@@ -46,8 +37,6 @@ function getOrCreate(quizId: string): Pending {
     p = {
       leaderboardTimer: null,
       distributionTimer: null,
-      answerSubmittedTimer: null,
-      answerSubmittedBuffer: [],
       pendingDistributionQuestionId: null,
     };
     queue.set(quizId, p);
@@ -60,29 +49,10 @@ function getOrCreate(quizId: string): Pending {
 export function enqueuePostAnswerBroadcasts(args: {
   quizId: string;
   questionId: string;
-  questionPosition: number;
-  userId: string;
-  displayName: string;
-  isCorrect: boolean;
 }): void {
   const p = getOrCreate(args.quizId);
 
-  // 1) "Alice answered Q3 (correct)" — coalesced into a single send per window
-  //    to avoid spamming SSE listeners when 50 players answer simultaneously.
-  p.answerSubmittedBuffer.push({
-    userId: args.userId,
-    displayName: args.displayName,
-    questionPosition: args.questionPosition,
-    isCorrect: args.isCorrect,
-  });
-  if (!p.answerSubmittedTimer) {
-    p.answerSubmittedTimer = setTimeout(
-      () => flushAnswerSubmitted(args.quizId),
-      ANSWER_SUBMITTED_FLUSH_MS,
-    );
-  }
-
-  // 2) Leaderboard recompute — debounced.
+  // 1) Leaderboard recompute — debounced and capped.
   if (!p.leaderboardTimer) {
     p.leaderboardTimer = setTimeout(
       () => flushLeaderboard(args.quizId),
@@ -90,7 +60,7 @@ export function enqueuePostAnswerBroadcasts(args: {
     );
   }
 
-  // 3) Answer distribution for the question that was just answered.
+  // 2) Answer distribution for the question that was just answered.
   p.pendingDistributionQuestionId = args.questionId;
   if (!p.distributionTimer) {
     p.distributionTimer = setTimeout(
@@ -100,29 +70,19 @@ export function enqueuePostAnswerBroadcasts(args: {
   }
 }
 
-async function flushAnswerSubmitted(quizId: string): Promise<void> {
-  const p = queue.get(quizId);
-  if (!p) return;
-  p.answerSubmittedTimer = null;
-  const events = p.answerSubmittedBuffer.splice(0);
-  for (const e of events) {
-    broadcast(quizId, {
-      type: "answer_submitted",
-      userId: e.userId,
-      displayName: e.displayName,
-      questionPosition: e.questionPosition,
-      isCorrect: e.isCorrect,
-    });
-  }
-}
-
 async function flushLeaderboard(quizId: string): Promise<void> {
   const p = queue.get(quizId);
   if (!p) return;
   p.leaderboardTimer = null;
   try {
-    const rows: LeaderboardRow[] = await leaderboard(quizId);
-    broadcast(quizId, { type: "leaderboard", rows });
+    const payload: LeaderboardResponse = await leaderboard(quizId);
+    broadcast(quizId, {
+      type: "leaderboard",
+      rows: payload.rows,
+      totalPlayers: payload.totalPlayers,
+      limit: payload.limit,
+      partial: payload.partial,
+    });
   } catch {
     // Best-effort. A failed broadcast won't desync state — the next answer
     // schedules another flush, and clients also poll /rooms/:code/leaderboard
@@ -170,6 +130,5 @@ export function clearBroadcastQueue(quizId: string): void {
   if (!p) return;
   if (p.leaderboardTimer) clearTimeout(p.leaderboardTimer);
   if (p.distributionTimer) clearTimeout(p.distributionTimer);
-  if (p.answerSubmittedTimer) clearTimeout(p.answerSubmittedTimer);
   queue.delete(quizId);
 }

@@ -1,6 +1,6 @@
 # Deployment
 
-> Last updated: **2026-05-07** (Vercel projects + admin auth allowlist).
+> Last updated: **2026-05-22** (Phase 1 worker + PgBouncer + API HPA).
 > Update triggers: cluster topology change, region change, new infra
 > resource, image registry move, CI workflow change.
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | `apps/quiz` (Next.js) | Vercel project `mini-quiz`, root `apps/quiz` | Edge + free preview deploys. Pure FE, no DB access. |
 | `apps/admin` (Next.js) | Vercel project `mini-quiz-admin`, root `apps/admin` | Same. Auth via ADMIN_EMAILS allowlist (no DB on Vercel). |
-| `apps/api` (Fastify) | DOKS | Long-lived process, in-proc scheduler + SSE |
+| `apps/api` (Fastify) | DOKS | Long-lived web pods for REST/SSE; one worker pod for scheduler/payouts |
 | Postgres (CNPG) | In-cluster (DOKS) | ~$50/mo cheaper than DO Managed at PoC scale |
 | Redis (Bitnami) | In-cluster (DOKS) | Same |
 | Image registry | Docker Hub `viralsangani/miniquiz-api` (public) | celo-org GHCR is blocked pending PAT approval |
@@ -106,10 +106,11 @@ deploy/
 | 0 | `sealed-secret-payloads` | The encrypted Secret YAMLs from `deploy/manifests/sealed-secrets/` |
 | 1 | `cert-manager` | cert-manager + Let's Encrypt ClusterIssuer |
 | 1 | `ingress-nginx` | ingress-nginx (DaemonSet, hostNetwork) |
+| 1 | `metrics-server` | Kubernetes resource metrics for `kubectl top` + HPA |
 | 2 | `cnpg-operator` | CloudNativePG operator |
-| 3 | `postgres-cluster` | CNPG `Cluster` CR (1 instance, 30 GiB) |
+| 3 | `postgres-cluster` | CNPG `Cluster` CR + PgBouncer Pooler |
 | 3 | `redis` | Bitnami legacy Redis 8.2.1 (standalone, AOF on) |
-| 4 | `api` | The Fastify api Helm chart |
+| 4 | `api` | Fastify web Deployment, worker Deployment, migration/seed hooks |
 
 `sealed-secret-payloads` is in the same wave as `sealed-secrets` because
 the encrypted YAMLs reference the controller namespace; the controller
@@ -246,5 +247,5 @@ of 10 GiB free tier), Docker Hub, Let's Encrypt, GitHub Actions
 - Prometheus / Loki / Grafana
 - DO Load Balancer
 - Snapshots
-- HPA above replicas=1 (until SSE moves to Redis pub/sub)
+- API HPA above 4 replicas before Phase 2 realtime/worker changes
 - Bandwidth-paid CDN (Cloudflare free is enough)

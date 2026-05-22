@@ -16,6 +16,8 @@ import { getLiveState } from "../services/room.service.js";
 import { enqueueAutoPayouts } from "../services/payout.service.js";
 import { evaluateBadgesAfterQuiz } from "../services/badge.service.js";
 import { getTreasurySummary } from "../services/treasury.service.js";
+import { expireLiveScores } from "../services/live-score.service.js";
+import { publishWorkerCommand } from "../services/worker-commands.js";
 
 const choiceSchema = z.object({ id: z.string().min(1), label: z.string().min(1) });
 const questionSchema = z.object({
@@ -282,11 +284,18 @@ export async function adminQuizRoutes(app: FastifyInstance) {
           quizId: quiz.id,
           endedAt: now.toISOString(),
         });
-        await enqueueAutoPayouts(quiz.id);
-        try {
-          await evaluateBadgesAfterQuiz(quiz.id);
-        } catch (e) {
-          req.log.error({ err: e, quizId: quiz.id }, "manual /end: badge eval failed");
+        await expireLiveScores(quiz.id);
+        const queued = await publishWorkerCommand({
+          type: "process_quiz_end",
+          quizId: quiz.id,
+        });
+        if (!queued) {
+          await enqueueAutoPayouts(quiz.id);
+          try {
+            await evaluateBadgesAfterQuiz(quiz.id);
+          } catch (e) {
+            req.log.error({ err: e, quizId: quiz.id }, "manual /end: badge eval failed");
+          }
         }
       }
       return { ok: true };

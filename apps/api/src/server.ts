@@ -19,7 +19,7 @@ import { dailyAdminRoutes } from "./routes/daily.admin.js";
 import { practiceAdminRoutes } from "./routes/practice.admin.js";
 import { aiGenAdminRoutes } from "./routes/ai-gen.admin.js";
 import { treasuryAdminRoutes } from "./routes/treasury.admin.js";
-import { startScheduler, stopScheduler } from "./services/scheduler.js";
+import { startBroker, stopBroker } from "./sse/broker.js";
 
 async function main() {
   const app = Fastify({
@@ -74,11 +74,11 @@ async function main() {
   await app.register(aiGenAdminRoutes);
   await app.register(treasuryAdminRoutes);
 
-  const schedulerHandle = startScheduler(app.log);
+  await startBroker(app.log);
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, "shutting down");
-    stopScheduler(schedulerHandle);
+    await stopBroker();
     await app.close();
     await prisma.$disconnect();
     process.exit(0);

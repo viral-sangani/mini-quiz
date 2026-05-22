@@ -1,7 +1,7 @@
 import { Prisma } from "../db.js";
 import { type BadgeId } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
-import { leaderboard } from "./room.service.js";
+import { fullLeaderboardRows } from "./room.service.js";
 
 // Idempotent — if a badge already exists for the user, the upsert is a no-op.
 // Returns true when a new badge was awarded (so callers can broadcast/notify).
@@ -24,7 +24,7 @@ export async function awardBadge(
 // badges they newly qualify for. Cheap reads; this fires ~once per quiz per
 // player (a few dozen rows max).
 export async function evaluateBadgesAfterQuiz(quizId: string): Promise<void> {
-  const rows = await leaderboard(quizId);
+  const rows = await fullLeaderboardRows(quizId);
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;

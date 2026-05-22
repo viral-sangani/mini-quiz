@@ -8,6 +8,16 @@ imagePullSecret: ""
 
 replicaCount: 1
 
+worker:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
 service:
   type: ClusterIP
   port: 4000
@@ -34,7 +44,7 @@ resources:
 
 hpa:
   enabled: true
-  minReplicas: 1
+  minReplicas: 2
   maxReplicas: 4
   targetCPUUtilizationPercentage: 70
 
@@ -54,9 +64,11 @@ secretRefs:
   redisSecret: redis-auth
 
 postgres:
-  service: miniquiz-pg-rw.data.svc.cluster.local
+  service: miniquiz-pg-pooler-rw.data.svc.cluster.local
+  directService: miniquiz-pg-rw.data.svc.cluster.local
   port: 5432
   database: miniquiz
+  pooledParams: "pgbouncer=true&connection_limit=3&pool_timeout=10"
 
 redis:
   service: redis-master.data.svc.cluster.local

@@ -78,10 +78,6 @@ function reducer(s: State, a: Action): State {
             ...s,
             live: { ...s.live, activePlayers: e.playerCount },
           };
-        case "answer_submitted":
-          // Already covered by leaderboard + answer_distribution events; keep
-          // for future avg-correct ticking if needed.
-          return s;
         case "quiz_started":
           return {
             ...s,

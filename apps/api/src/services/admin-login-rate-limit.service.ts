@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
-import Redis from "ioredis";
-import { config } from "../config.js";
+import { createRedisClient, readyRedis } from "./redis.js";
 
 const WINDOW_SECONDS = 15 * 60;
 const EMAIL_LIMIT = 5;
@@ -11,27 +10,10 @@ type Counter = { count: number; expiresAt: number };
 const memoryCounters = new Map<string, Counter>();
 const memoryLocks = new Map<string, number>();
 
-let redis: Redis | null | undefined;
+const redis = createRedisClient("admin-login-rate-limit");
 
-function getRedis(): Redis | null {
-  if (!config.REDIS_URL) return null;
-  if (redis !== undefined) return redis;
-  redis = new Redis(config.REDIS_URL, {
-    enableOfflineQueue: false,
-    maxRetriesPerRequest: 1,
-    lazyConnect: true,
-  });
-  redis.on("error", () => {
-    // Callers fall back to memory when an operation throws.
-  });
+function getRedis() {
   return redis;
-}
-
-async function readyRedis(): Promise<Redis | null> {
-  const r = getRedis();
-  if (!r) return null;
-  if (r.status === "wait" || r.status === "end") await r.connect();
-  return r;
 }
 
 function nowMs(): number {
@@ -51,14 +33,14 @@ function key(kind: "email" | "ip" | "lock", value: string): string {
 }
 
 async function redisGetInt(k: string): Promise<number> {
-  const r = await readyRedis();
+  const r = await readyRedis(getRedis());
   if (!r) return -1;
   const value = await r.get(k);
   return value ? Number(value) || 0 : 0;
 }
 
 async function redisIncrement(k: string): Promise<number> {
-  const r = await readyRedis();
+  const r = await readyRedis(getRedis());
   if (!r) return -1;
   const count = await r.incr(k);
   if (count === 1) await r.expire(k, WINDOW_SECONDS);
@@ -66,13 +48,13 @@ async function redisIncrement(k: string): Promise<number> {
 }
 
 async function redisSetLock(k: string): Promise<void> {
-  const r = await readyRedis();
+  const r = await readyRedis(getRedis());
   if (!r) return;
   await r.set(k, "1", "EX", WINDOW_SECONDS);
 }
 
 async function redisClear(keys: string[]): Promise<void> {
-  const r = await readyRedis();
+  const r = await readyRedis(getRedis());
   if (!r || keys.length === 0) return;
   await r.del(...keys);
 }

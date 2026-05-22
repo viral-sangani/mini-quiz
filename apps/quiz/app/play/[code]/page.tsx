@@ -6,6 +6,8 @@ import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import type {
   LeaderboardRow,
+  LeaderboardResponse,
+  LeaderboardViewerRow,
   PublicPayout,
   PublicQuestion,
   PublicQuiz,
@@ -89,6 +91,13 @@ function PlayInner() {
   const [totalPoints, setTotalPoints] = useState<number>(0);
 
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([]);
+  const [leaderboardMeta, setLeaderboardMeta] = useState<{
+    totalPlayers: number;
+    limit: number;
+    partial: boolean;
+  }>({ totalPlayers: 0, limit: 50, partial: false });
+  const [viewerLeaderboardRow, setViewerLeaderboardRow] =
+    useState<LeaderboardViewerRow | null>(null);
   const [payouts, setPayouts] = useState<PublicPayout[]>([]);
   const [celebrationPayout, setCelebrationPayout] = useState<PublicPayout | null>(null);
   const [timerTick, setTimerTick] = useState<number>(0);
@@ -227,8 +236,36 @@ function PlayInner() {
     };
   }, [phase, walletAddress, code]);
 
+  const hydrateRoomState = useCallback(async () => {
+    const params = new URLSearchParams({ limit: "50" });
+    if (userId) params.set("viewerUserId", userId);
+    const [quizRes, lbRes, payoutRes] = await Promise.all([
+      api.get<{ quiz: PublicQuiz; questions: PublicQuestion[] }>(
+        `/quizzes/${code}`,
+      ),
+      api.get<LeaderboardResponse>(`/rooms/${code}/leaderboard?${params.toString()}`),
+      api.get<{ payouts: PublicPayout[] }>(`/rooms/${code}/payouts`),
+    ]);
+    setQuiz(quizRes.quiz);
+    setLeaderboardRows(lbRes.rows);
+    setLeaderboardMeta({
+      totalPlayers: lbRes.totalPlayers,
+      limit: lbRes.limit,
+      partial: lbRes.partial,
+    });
+    setViewerLeaderboardRow(lbRes.viewer);
+    setPayouts(payoutRes.payouts);
+    if (quizRes.quiz.status === "LIVE") {
+      setPhase((p) => (p === "waiting_lobby" ? "playing" : p));
+    } else if (quizRes.quiz.status === "ENDED") {
+      setPhase((p) =>
+        p === "waiting_lobby" || p === "playing" ? "finished" : p,
+      );
+    }
+  }, [code, userId]);
+
   // ---------------- SSE ----------------
-  useRoomEvents(
+  const roomEvents = useRoomEvents(
     phase === "waiting_lobby" || phase === "playing" || phase === "finished" ? code : null,
     (event: RoomEvent) => {
       switch (event.type) {
@@ -245,9 +282,20 @@ function PlayInner() {
             prev ? { ...prev, status: "ENDED", endedAt: event.endedAt } : prev,
           );
           setPhase((p) => (p === "playing" ? "finished" : p));
+          void hydrateRoomState();
           break;
         case "leaderboard":
           setLeaderboardRows(event.rows);
+          setLeaderboardMeta({
+            totalPlayers: event.totalPlayers,
+            limit: event.limit,
+            partial: event.partial,
+          });
+          setViewerLeaderboardRow((prev) =>
+            prev && event.rows.some((row) => row.userId === prev.userId)
+              ? null
+              : prev,
+          );
           break;
         case "lobby_updated":
           setQuiz((prev) =>
@@ -307,6 +355,10 @@ function PlayInner() {
       }
     },
   );
+  const roomEventsRef = useRef(roomEvents);
+  useEffect(() => {
+    roomEventsRef.current = roomEvents;
+  }, [roomEvents.connectionState, roomEvents.lastMessageAt]);
 
   // When the quiz ends, pull a fresh profile so totalXp / level / badges
   // are current on the home and profile tabs without a reload.
@@ -444,52 +496,56 @@ function PlayInner() {
     submitAnswer,
   ]);
 
-  // Polling fallback for SSE drops + initial leaderboard hydrate.
+  // Initial hydrate + stale-only polling fallback for SSE drops.
   useEffect(() => {
     if (!roomPlayerId) return;
     let cancelled = false;
-    async function tick() {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let nextPollAt = 0;
+
+    const shouldFallbackPoll = () => {
+      const current = roomEventsRef.current;
+      if (current.connectionState !== "open") return true;
+      if (!current.lastMessageAt) return true;
+      return Date.now() - current.lastMessageAt > 10_000;
+    };
+
+    async function pollOnce() {
       try {
-        const [quizRes, lbRes, payoutRes] = await Promise.all([
-          api.get<{ quiz: PublicQuiz; questions: PublicQuestion[] }>(
-            `/quizzes/${code}`,
-          ),
-          api.get<{ rows: LeaderboardRow[] }>(`/rooms/${code}/leaderboard`),
-          api.get<{ payouts: PublicPayout[] }>(`/rooms/${code}/payouts`),
-        ]);
-        if (cancelled) return;
-        setQuiz(quizRes.quiz);
-        setLeaderboardRows(lbRes.rows);
-        setPayouts(payoutRes.payouts);
-        if (quizRes.quiz.status === "LIVE") {
-          setPhase((p) => (p === "waiting_lobby" ? "playing" : p));
-        } else if (quizRes.quiz.status === "ENDED") {
-          setPhase((p) =>
-            p === "waiting_lobby" || p === "playing" ? "finished" : p,
-          );
-        }
+        await hydrateRoomState();
       } catch {
         // non-fatal
       }
     }
-    void tick();
-    const interval = setInterval(tick, 3000);
+
+    async function loop() {
+      if (cancelled) return;
+      if (shouldFallbackPoll() && Date.now() >= nextPollAt) {
+        await pollOnce();
+        nextPollAt = Date.now() + 15_000 + Math.floor(Math.random() * 5_000);
+      }
+      if (!cancelled) timeout = setTimeout(loop, 1000);
+    }
+
+    void pollOnce();
+    timeout = setTimeout(loop, 1000);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (timeout) clearTimeout(timeout);
     };
-  }, [roomPlayerId, code]);
+  }, [roomPlayerId, hydrateRoomState]);
 
   const myRank = useMemo(() => {
     if (!userId) return null;
     const i = leaderboardRows.findIndex((r) => r.userId === userId);
-    return i >= 0 ? i + 1 : null;
-  }, [leaderboardRows, userId]);
+    if (i >= 0) return i + 1;
+    return viewerLeaderboardRow?.rank ?? null;
+  }, [leaderboardRows, userId, viewerLeaderboardRow]);
 
   const myRow = useMemo(() => {
     if (!userId) return null;
-    return leaderboardRows.find((r) => r.userId === userId) ?? null;
-  }, [leaderboardRows, userId]);
+    return leaderboardRows.find((r) => r.userId === userId) ?? viewerLeaderboardRow;
+  }, [leaderboardRows, userId, viewerLeaderboardRow]);
 
   // ---------------- Render ----------------
 
@@ -542,10 +598,12 @@ function PlayInner() {
     <ResultsScreen
       myRank={myRank}
       myRow={myRow}
-      totalPlayers={leaderboardRows.length}
+      totalPlayers={leaderboardMeta.totalPlayers || leaderboardRows.length}
       correctCount={correctCount}
       totalPoints={totalPoints}
       leaderboardRows={leaderboardRows}
+      leaderboardMeta={leaderboardMeta}
+      viewerLeaderboardRow={viewerLeaderboardRow}
       payouts={payouts}
       celebrationPayout={celebrationPayout}
       viewerUserId={userId}
@@ -1390,6 +1448,8 @@ function ResultsScreen({
   correctCount,
   totalPoints,
   leaderboardRows,
+  leaderboardMeta,
+  viewerLeaderboardRow,
   payouts,
   celebrationPayout,
   viewerUserId,
@@ -1402,6 +1462,8 @@ function ResultsScreen({
   correctCount: number;
   totalPoints: number;
   leaderboardRows: LeaderboardRow[];
+  leaderboardMeta: { totalPlayers: number; limit: number; partial: boolean };
+  viewerLeaderboardRow: LeaderboardViewerRow | null;
   payouts: PublicPayout[];
   celebrationPayout: PublicPayout | null;
   viewerUserId: string | null;
@@ -1585,6 +1647,9 @@ function ResultsScreen({
       <LeaderboardList
         quiz={quiz}
         rows={leaderboardRows}
+        totalPlayers={leaderboardMeta.totalPlayers || totalPlayers}
+        partial={leaderboardMeta.partial}
+        viewerRow={viewerLeaderboardRow}
         payouts={payouts}
         viewerUserId={viewerUserId}
         showPayouts={isQuizEnded}
@@ -1685,24 +1750,38 @@ function PayoutResultCard({
 function LeaderboardList({
   quiz,
   rows,
+  totalPlayers,
+  partial,
+  viewerRow,
   payouts,
   viewerUserId,
   showPayouts,
 }: {
   quiz: PublicQuiz;
   rows: LeaderboardRow[];
+  totalPlayers: number;
+  partial: boolean;
+  viewerRow: LeaderboardViewerRow | null;
   payouts: PublicPayout[];
   viewerUserId: string | null;
   showPayouts: boolean;
 }) {
+  const renderRows: (LeaderboardRow | LeaderboardViewerRow)[] =
+    viewerRow && !rows.some((row) => row.userId === viewerRow.userId)
+      ? [...rows, viewerRow]
+      : rows;
+
   return (
     <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}>
       <div className="mq-eyebrow" style={{ display: "flex", justifyContent: "space-between" }}>
         <span>Leaderboard</span>
-        <span>{rows.length} players</span>
+        <span>
+          {partial ? `${rows.length} of ` : ""}
+          {totalPlayers || rows.length} players
+        </span>
       </div>
-      {rows.map((row, index) => {
-        const rank = index + 1;
+      {renderRows.map((row, index) => {
+        const rank = "rank" in row ? row.rank : index + 1;
         const payout = payouts.find((p) => p.userId === row.userId);
         const prizeAmount =
           payout?.amount ?? (showPayouts ? quiz.prizeAmounts[rank - 1] : undefined);
@@ -1710,7 +1789,7 @@ function LeaderboardList({
         const me = row.userId === viewerUserId;
         return (
           <div
-            key={row.userId}
+            key={`${row.userId}-${rank}`}
             style={{
               display: "grid",
               gridTemplateColumns: "36px 1fr auto",

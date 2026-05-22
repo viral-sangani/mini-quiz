@@ -2,7 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { RoomEvent } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
-import { joinRoom, leaderboard, submitAnswer } from "../services/room.service.js";
+import {
+  joinRoom,
+  leaderboard,
+  normalizeLeaderboardLimit,
+  submitAnswer,
+} from "../services/room.service.js";
 import { listPayoutsForQuiz } from "../services/payout.service.js";
 import { subscribe } from "../sse/broker.js";
 
@@ -16,6 +21,11 @@ const answerSchema = z.object({
   questionId: z.string().min(1),
   choiceId: z.string().min(1),
   timeTakenMs: z.number().int().nonnegative(),
+});
+
+const leaderboardQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().optional(),
+  viewerUserId: z.string().min(1).optional(),
 });
 
 export async function roomRoutes(app: FastifyInstance) {
@@ -78,12 +88,19 @@ export async function roomRoutes(app: FastifyInstance) {
   app.get<{ Params: { code: string } }>(
     "/rooms/:code/leaderboard",
     async (req, reply) => {
+      const parsed = leaderboardQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.flatten() });
+      }
       const quiz = await prisma.quiz.findUnique({
         where: { code: req.params.code.toUpperCase() },
         select: { id: true },
       });
       if (!quiz) return reply.code(404).send({ error: "Quiz not found" });
-      return { rows: await leaderboard(quiz.id) };
+      return leaderboard(quiz.id, {
+        limit: normalizeLeaderboardLimit(parsed.data.limit),
+        viewerUserId: parsed.data.viewerUserId ?? null,
+      });
     },
   );
 
@@ -119,8 +136,14 @@ export async function roomRoutes(app: FastifyInstance) {
       reply.raw.write("retry: 3000\n\n");
 
       // Send initial leaderboard snapshot immediately.
-      const rows = await leaderboard(quiz.id);
-      const initial: RoomEvent = { type: "leaderboard", rows };
+      const leaderboardPayload = await leaderboard(quiz.id);
+      const initial: RoomEvent = {
+        type: "leaderboard",
+        rows: leaderboardPayload.rows,
+        totalPlayers: leaderboardPayload.totalPlayers,
+        limit: leaderboardPayload.limit,
+        partial: leaderboardPayload.partial,
+      };
       reply.raw.write(`data: ${JSON.stringify(initial)}\n\n`);
       const playerCount = quiz._count.players;
       const lobbyInitial: RoomEvent = {

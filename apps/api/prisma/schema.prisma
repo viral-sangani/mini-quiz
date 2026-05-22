@@ -251,7 +251,7 @@ model RoomPlayer {
   dailyStartedAt     DateTime?
   // Daily-quiz only: per-play question order, Fisher-Yates shuffled at start.
   // Stored so a refresh re-renders the same order. NULL/[] for live rooms.
-  dailyQuestionOrder String[]
+  dailyQuestionOrder String[] @default([])
 
   quiz    Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
   user    User     @relation(fields: [userId], references: [id])
@@ -259,6 +259,7 @@ model RoomPlayer {
 
   @@unique([quizId, userId])
   @@index([quizId])
+  @@index([quizId, joinedAt])
 }
 
 model Answer {
@@ -278,6 +279,8 @@ model Answer {
 
   @@unique([roomPlayerId, questionId])
   @@index([questionId])
+  @@index([userId, submittedAt])
+  @@index([submittedAt, userId])
 }
 
 model Payout {
@@ -354,7 +357,7 @@ model PracticePlay {
   userId       String
   startedAt    DateTime  @default(now())
   finishedAt   DateTime?
-  questionIds  String[]
+  questionIds  String[]  @default([])
   scoreCorrect Int       @default(0)
   scoreTotal   Int       @default(0)
 

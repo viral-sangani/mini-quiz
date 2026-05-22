@@ -19,6 +19,7 @@ import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
 import { awardBadge } from "./badge.service.js";
 import { leaderboard } from "./room.service.js";
+import { publishWorkerCommand } from "./worker-commands.js";
 
 const ERC20_TRANSFER_ABI = [
   {
@@ -37,6 +38,15 @@ const publicClient = createPublicClient({
   chain: celo,
   transport: http(config.CELO_RPC_URL),
 });
+
+async function requestPayoutBroadcast(payoutId: string): Promise<void> {
+  if (config.APP_ROLE === "worker") {
+    await runPayoutBroadcast(payoutId);
+    return;
+  }
+  const queued = await publishWorkerCommand({ type: "broadcast_payout", payoutId });
+  if (!queued) await runPayoutBroadcast(payoutId);
+}
 
 export function treasuryAccount() {
   if (!config.TREASURY_PRIVATE_KEY) {
@@ -62,9 +72,13 @@ export async function enqueueAutoPayouts(quizId: string): Promise<void> {
   // tokenAddress; lookups round-trip via getPayoutTokenByAddress.
   const token = getPayoutToken(quiz.payoutToken);
   const tokenAddressForRow = token.isNative ? "" : (token.address ?? "");
-  const rows = await leaderboard(quizId);
-  const winnersCount = Math.min(quiz.prizeAmounts.length, rows.length);
-  for (let i = 0; i < winnersCount; i++) {
+  const winnersCount = quiz.prizeAmounts.length;
+  const { rows } = await leaderboard(quizId, {
+    limit: Math.max(1, winnersCount),
+    capLimit: false,
+  });
+  const payoutCount = Math.min(winnersCount, rows.length);
+  for (let i = 0; i < payoutCount; i++) {
     const rank = i + 1;
     const row = rows[i];
     if (!row) continue;
@@ -117,16 +131,16 @@ export async function enqueueAutoPayouts(quizId: string): Promise<void> {
       userId: row.userId,
       amount,
     });
-    // Fire on-chain transfer in the background; receipt confirmation flows
-    // through confirmPayoutInBackground via broadcastPayout below.
-    void broadcastPayout(payout.id);
+    // Fire on-chain transfer in the worker when Redis is available; local/dev
+    // without Redis falls back to inline background processing.
+    void requestPayoutBroadcast(payout.id);
   }
 }
 
 // Sign + broadcast an APPROVED payout. Splits the chain-side work out of
 // approvePayout so both the auto-disburse path and the manual retry path
 // can share it.
-async function broadcastPayout(payoutId: string): Promise<void> {
+export async function runPayoutBroadcast(payoutId: string): Promise<void> {
   const payout = await prisma.payout.findUnique({
     where: { id: payoutId },
     include: { user: true },
@@ -237,14 +251,14 @@ export async function retryFailedPayout(
       confirmedAt: null,
     },
   });
-  await broadcastPayout(payoutId);
+  await requestPayoutBroadcast(payoutId);
   const fresh = await prisma.payout.findUnique({ where: { id: payoutId } });
   return { status: fresh?.status ?? "APPROVED" };
 }
 
 // Admin manually approves a stuck PENDING payout (legacy rows from before
 // auto-disburse) or retries a FAILED one. Both routes converge through
-// broadcastPayout above.
+// runPayoutBroadcast above.
 export async function approvePayout(
   payoutId: string,
   adminUserId: string,
@@ -263,7 +277,7 @@ export async function approvePayout(
     where: { id: payoutId },
     data: { status: "APPROVED", approvedById: adminUserId },
   });
-  await broadcastPayout(payoutId);
+  await requestPayoutBroadcast(payoutId);
   const fresh = await prisma.payout.findUnique({ where: { id: payoutId } });
   return {
     status: fresh?.status ?? "APPROVED",

@@ -85,6 +85,18 @@ export type LeaderboardRow = {
   totalTimeMs: number;
 };
 
+export type LeaderboardViewerRow = LeaderboardRow & {
+  rank: number;
+};
+
+export type LeaderboardResponse = {
+  rows: LeaderboardRow[];
+  totalPlayers: number;
+  limit: number;
+  partial: boolean;
+  viewer: LeaderboardViewerRow | null;
+};
+
 export type PublicPayout = {
   id: string;
   rank: number;
@@ -283,13 +295,12 @@ export type RoomEvent =
     }
   | { type: "player_joined"; userId: string; displayName: string }
   | {
-      type: "answer_submitted";
-      userId: string;
-      displayName: string;
-      questionPosition: number;
-      isCorrect: boolean;
+      type: "leaderboard";
+      rows: LeaderboardRow[];
+      totalPlayers: number;
+      limit: number;
+      partial: boolean;
     }
-  | { type: "leaderboard"; rows: LeaderboardRow[] }
   | {
       type: "answer_distribution";
       questionId: string;
