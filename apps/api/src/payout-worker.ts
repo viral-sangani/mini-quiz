@@ -3,7 +3,6 @@ import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { evaluateBadgesAfterQuiz } from "./services/badge.service.js";
 import { enqueueAutoPayouts, runPayoutBroadcast } from "./services/payout.service.js";
-import { startScheduler, stopScheduler } from "./services/scheduler.js";
 import {
   startWorkerCommandListener,
   stopWorkerCommands,
@@ -25,18 +24,12 @@ async function handleCommand(command: WorkerCommand): Promise<void> {
 }
 
 async function main() {
-  log.info({ role: config.APP_ROLE }, "worker: starting");
-  const schedulerHandle = startScheduler(log);
-  if (config.APP_ROLE === "worker") {
-    await startWorkerCommandListener(log, handleCommand);
-  }
+  log.info("payout worker: starting");
+  await startWorkerCommandListener(log, handleCommand);
 
   const shutdown = async (signal: string) => {
-    log.info({ signal }, "worker: shutting down");
-    stopScheduler(schedulerHandle);
-    if (config.APP_ROLE === "worker") {
-      await stopWorkerCommands();
-    }
+    log.info({ signal }, "payout worker: shutting down");
+    await stopWorkerCommands();
     await prisma.$disconnect();
     process.exit(0);
   };
@@ -45,6 +38,6 @@ async function main() {
 }
 
 void main().catch((e) => {
-  log.error({ err: e }, "worker: failed");
+  log.error({ err: e }, "payout worker: failed");
   process.exit(1);
 });

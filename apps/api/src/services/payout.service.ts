@@ -40,7 +40,7 @@ const publicClient = createPublicClient({
 });
 
 async function requestPayoutBroadcast(payoutId: string): Promise<void> {
-  if (config.APP_ROLE === "worker") {
+  if (config.APP_ROLE === "worker" || config.APP_ROLE === "payout-worker") {
     await runPayoutBroadcast(payoutId);
     return;
   }

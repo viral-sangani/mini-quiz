@@ -7,7 +7,16 @@ import { z } from "zod";
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  APP_ROLE: z.enum(["web", "worker"]).default("web"),
+  APP_ROLE: z
+    .enum([
+      "web",
+      "worker",
+      "scheduler-worker",
+      "realtime",
+      "score-worker",
+      "payout-worker",
+    ])
+    .default("web"),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1),
   NEXTAUTH_SECRET: z.string().min(16),
@@ -33,6 +42,16 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
+  NATS_URL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  ENABLE_EMBEDDED_SSE: z
+    .string()
+    .optional()
+    .transform((v) => v !== "false"),
+  SCORE_WORKER_CONCURRENCY: z.coerce.number().int().positive().default(32),
+  ANSWER_QUEUE_MAX_PENDING: z.coerce.number().int().positive().default(25_000),
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .default("info"),

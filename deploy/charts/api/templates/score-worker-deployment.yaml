@@ -1,40 +1,40 @@
-{{- if .Values.worker.enabled -}}
+{{- if .Values.scoreWorker.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "api.fullname" . }}-worker
+  name: {{ include "api.fullname" . }}-score-worker
   labels:
     app.kubernetes.io/name: {{ .Chart.Name }}
-    app.kubernetes.io/instance: {{ .Release.Name }}-worker
+    app.kubernetes.io/instance: {{ .Release.Name }}-score-worker
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
-  replicas: {{ .Values.worker.replicaCount }}
+  replicas: {{ .Values.scoreWorker.replicaCount }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ .Chart.Name }}
-      app.kubernetes.io/instance: {{ .Release.Name }}-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}-score-worker
   template:
     metadata:
       labels:
         app.kubernetes.io/name: {{ .Chart.Name }}
-        app.kubernetes.io/instance: {{ .Release.Name }}-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}-score-worker
     spec:
       {{- if .Values.imagePullSecret }}
       imagePullSecrets:
         - name: {{ .Values.imagePullSecret }}
       {{- end }}
       containers:
-        - name: worker
+        - name: score-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["node", "dist/worker.js"]
+          command: ["node", "dist/score-worker.js"]
           env:
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
             - name: APP_ROLE
-              value: "scheduler-worker"
+              value: "score-worker"
             - name: PGUSER
               valueFrom:
                 secretKeyRef:
@@ -60,5 +60,5 @@ spec:
             - secretRef:
                 name: {{ .Values.secretRefs.appSecret }}
           resources:
-            {{- toYaml .Values.worker.resources | nindent 12 }}
+            {{- toYaml .Values.scoreWorker.resources | nindent 12 }}
 {{- end }}

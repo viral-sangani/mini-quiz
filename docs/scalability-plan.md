@@ -4,10 +4,11 @@
 > Scope: roadmap for 50k-100k DAUs and high-concurrency live games.
 > Explicit exclusion: this document does **not** include Postgres backups to R2.
 
-Mini Quiz is still optimized for a low-cost launch: two Vercel-hosted
-frontends, Fastify web pods on DOKS, one worker pod, one Postgres primary, one
-Redis master, and Cloudflare in front. Phase 1 removes the unsafe single-process
-realtime/scheduler assumptions while keeping the stack compact.
+Mini Quiz is still cost-aware, but Phase 2 introduces the event-ready shape:
+REST API pods, a dedicated realtime gateway, score workers, one scheduler/
+finalizer worker, one Postgres primary, Redis hot scores, NATS JetStream, and
+Cloudflare in front. The target is 100k-ready architecture shipped through
+10k, 25k, 50k, and 100k rehearsal gates.
 
 ## Current architecture snapshot
 
@@ -15,26 +16,31 @@ realtime/scheduler assumptions while keeping the stack compact.
 |---|---|
 | Player app | Next.js on Vercel, talks to `https://api.miniquiz.club` |
 | Admin app | Next.js on Vercel, API-only auth/data access |
-| API | Fastify web pods on DOKS, HPA target 2-4 pods in Phase 1 |
-| Worker | One API worker pod owns scheduler + payout background work |
-| Realtime | Server-Sent Events with Redis pub/sub cross-pod fanout |
+| API | Fastify web pods on DOKS, HPA target 2-4 pods |
+| Worker | One scheduler/finalizer pod, one conservative payout worker pod |
+| Realtime | Dedicated SSE gateway pods on DOKS |
+| Event spine | NATS JetStream stores room events, accepted answers, and payout event subjects |
 | Scheduler | 1s tick in the worker pod only |
 | Database | Single CNPG Postgres primary behind a CNPG PgBouncer Pooler for app traffic |
-| Cache/rate limit | Single Redis master; also carries live room pub/sub + hot scores |
+| Cache/rate limit | Single Redis master; rate limits, worker-command fallback, and hot live scores |
 | Ingress | Cloudflare to one DOKS node via ingress-nginx host networking |
-| Autoscaling | HPA object exists; Phase 0 keeps max replicas at 1 |
+| Autoscaling | API, realtime, and score-worker HPAs scale independently; scheduler worker stays 1 |
 
 ## Known scaling limits
 
 - **Always-on polling**: joined players previously polled quiz state,
   leaderboard, and payouts every 3 seconds. At tens of thousands of players,
   this alone can overwhelm the API.
-- **Single Redis**: Redis is now on the hot path for realtime and live scores;
-  Phase 2 should add stronger eventing/observability before major events.
-- **Single worker**: scheduler correctness is safe, but worker saturation is
-  still a single-pod bottleneck.
-- **Answer ingest still hits Postgres**: every answer remains a DB write before
-  Redis score refresh. Queue-based ingest is Phase 2.
+- **Single Redis**: Redis remains on the hot leaderboard path. It is no longer
+  the durable event spine, but it can still bottleneck score reads at major
+  event scale.
+- **Single scheduler/finalizer**: correctness is safe, but timer transitions
+  are still owned by one pod until leader election exists.
+- **Answer ingest still writes Postgres inline**: the API now publishes accepted
+  answers to JetStream for async scoring, but still writes `Answer` before
+  queue publish so DB remains the source of truth.
+- **Observability is still basic**: metrics-server exists, but production event
+  lag, consumer lag, and SSE connection dashboards are still follow-up work.
 
 ## Phase 0: stabilize the current architecture
 
@@ -83,22 +89,30 @@ fanout.
 
 Goal: support 50k-100k concurrent live players during promoted events.
 
-- Create a dedicated realtime gateway tier for SSE or WebSocket connections.
-- Use queue/stream-based answer ingest with backpressure and retry semantics.
-- Broadcast small deltas instead of full state: top-row changes, viewer score,
-  player counts, question transitions, payout status.
-- Persist final standings to Postgres at quiz end and keep hot leaderboard state
-  in Redis/NATS-backed live infrastructure during the game.
-- Add production observability: event lag, SSE connection count, queue depth,
-  Postgres latency, API error rate, payout latency, and pod saturation.
-- Use scheduled pre-warm for promoted events, then downscale API/realtime/worker
-  tiers independently after the event window.
+- Dedicated realtime gateway tier now owns `/rooms/:code/events`; production
+  web API pods set `ENABLE_EMBEDDED_SSE=false`.
+- NATS JetStream is the durable event spine with subjects:
+  `room.{quizId}.events`, `room.{quizId}.answers`,
+  `room.{quizId}.scores`, `payout.commands`, and `payout.events`.
+- Live answer submit validates and writes the `Answer` row, then publishes an
+  accepted-answer event. Score workers consume durable answer events, refresh
+  Redis hot scores, and broadcast capped leaderboard/distribution updates.
+- API, realtime gateway, and score workers have separate HPAs. Scheduler/
+  finalizer and payout workers remain conservative single-owner background work.
+- Ingress routes `/rooms/{code}/events` to realtime gateway pods and all other
+  API traffic to REST API pods.
+- Final payout standings continue to use Postgres-backed aggregation after the
+  quiz is `ENDED`; Redis is never payout truth.
+- Remaining Phase 2 work: production dashboards/alerts for event lag,
+  JetStream consumer lag, SSE connection count, DB latency, Redis pressure, and
+  payout latency; plus 10k/25k/50k/100k rehearsal gates.
 
 ## Operating defaults
 
-- Keep SSE in Phase 1. Do not switch to WebSockets until there is a concrete
+- Keep SSE. Do not switch to WebSockets until there is a concrete
   bidirectional realtime requirement.
-- Keep API HPA at 2-4 pods in Phase 1.
-- Treat dedicated realtime gateways, answer queues, and worker autoscaling as
-  Phase 2 work.
+- Keep REST API HPA at 2-4 pods until load tests justify higher limits.
+- Keep scheduler/finalizer and payout workers at one replica. Scale score
+  workers, realtime gateways, and REST API pods independently around live
+  windows.
 - Exclude Postgres backups to R2 from this plan per product direction.

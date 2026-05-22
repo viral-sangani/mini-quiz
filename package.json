@@ -23,7 +23,8 @@
     "db:generate": "pnpm --filter @mini-quiz/api prisma generate",
     "db:studio": "pnpm --filter @mini-quiz/api prisma studio",
     "db:seed": "pnpm --filter @mini-quiz/api seed",
-    "loadtest:phase0": "node scripts/loadtest-phase0.mjs"
+    "loadtest:phase0": "node scripts/loadtest-phase0.mjs",
+    "loadtest:phase2": "node scripts/loadtest-phase2.mjs"
   },
   "devDependencies": {
     "turbo": "^2.1.3",

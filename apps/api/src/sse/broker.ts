@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { nanoid } from "nanoid";
 import type { RoomEvent } from "@mini-quiz/shared";
+import { publishRoomEvent, stopNats, subscribeRoomEvents } from "../services/nats.js";
 import { createRedisClient, readyRedis } from "../services/redis.js";
 
 export type SseClient = {
@@ -25,6 +26,7 @@ let pub = createRedisClient("sse-pub");
 let sub = createRedisClient("sse-sub");
 let started = false;
 let brokerLog: FastifyBaseLogger | null = null;
+let stopNatsRoomEvents: (() => void) | null = null;
 
 function registry(): Registry {
   if (!globalThis.__sseRegistry) globalThis.__sseRegistry = new Map();
@@ -49,7 +51,17 @@ function localFanout(quizId: string, event: RoomEvent): void {
 
 export async function startBroker(log?: FastifyBaseLogger): Promise<void> {
   brokerLog = log ?? null;
-  if (started || !sub) return;
+  if (started) return;
+  stopNatsRoomEvents = await subscribeRoomEvents(
+    (quizId, event) => localFanout(quizId, event),
+    log,
+  );
+  if (stopNatsRoomEvents) {
+    started = true;
+    log?.info({ publisherId }, "sse broker: NATS room fanout enabled");
+    return;
+  }
+  if (!sub) return;
   const client = await readyRedis(sub);
   if (!client) {
     log?.warn("sse broker: redis unavailable, using process-local fanout");
@@ -71,6 +83,9 @@ export async function startBroker(log?: FastifyBaseLogger): Promise<void> {
 
 export async function stopBroker(): Promise<void> {
   started = false;
+  stopNatsRoomEvents?.();
+  stopNatsRoomEvents = null;
+  await stopNats();
   await Promise.allSettled([pub?.quit(), sub?.quit()]);
   pub = null;
   sub = null;
@@ -91,6 +106,13 @@ export function subscribe(quizId: string, client: SseClient): () => void {
 }
 
 export function broadcast(quizId: string, event: RoomEvent): void {
+  void publishRoomEvent(quizId, event, brokerLog ?? undefined).then((published) => {
+    if (published) return;
+    publishRedisOrLocal(quizId, event);
+  });
+}
+
+function publishRedisOrLocal(quizId: string, event: RoomEvent): void {
   if (!pub) {
     localFanout(quizId, event);
     return;

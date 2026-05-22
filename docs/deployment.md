@@ -1,6 +1,6 @@
 # Deployment
 
-> Last updated: **2026-05-22** (Phase 1 worker + PgBouncer + API HPA).
+> Last updated: **2026-05-22** (Phase 2 NATS + realtime gateway).
 > Update triggers: cluster topology change, region change, new infra
 > resource, image registry move, CI workflow change.
 
@@ -10,9 +10,10 @@
 |---|---|---|
 | `apps/quiz` (Next.js) | Vercel project `mini-quiz`, root `apps/quiz` | Edge + free preview deploys. Pure FE, no DB access. |
 | `apps/admin` (Next.js) | Vercel project `mini-quiz-admin`, root `apps/admin` | Same. Auth via ADMIN_EMAILS allowlist (no DB on Vercel). |
-| `apps/api` (Fastify) | DOKS | Long-lived web pods for REST/SSE; one worker pod for scheduler/payouts |
+| `apps/api` (Fastify) | DOKS | REST API pods, realtime gateway pods, score workers, one scheduler worker, and one payout worker |
 | Postgres (CNPG) | In-cluster (DOKS) | ~$50/mo cheaper than DO Managed at PoC scale |
 | Redis (Bitnami) | In-cluster (DOKS) | Same |
+| NATS JetStream | In-cluster (DOKS) | Durable live-event spine for Phase 2 |
 | Image registry | Docker Hub `viralsangani/miniquiz-api` (public) | celo-org GHCR is blocked pending PAT approval |
 | Argo source repo | `viral-sangani/mini-quiz` (public mirror) | celo-org repo private, PAT pending |
 | TLS | Cloudflare edge + Let's Encrypt origin (HTTP-01) | Free + DDoS absorption |
@@ -53,8 +54,8 @@ add a DO Load Balancer (+$12/mo) or use Cloudflare Tunnel.
 │  • cert-manager + Let's Encrypt issuer │
 │  • ingress-nginx (hostNetwork)         │
 │  • CNPG operator + Postgres Cluster CR │
-│  • Bitnami Redis                       │
-│  • api Helm chart + Deployment + HPA   │
+│  • Bitnami Redis + NATS JetStream      │
+│  • api Helm chart + REST/realtime/workers/HPA │
 │  • migration Job (PreSync hook)        │
 └────────────────────────────────────────┘
 ```
@@ -110,7 +111,8 @@ deploy/
 | 2 | `cnpg-operator` | CloudNativePG operator |
 | 3 | `postgres-cluster` | CNPG `Cluster` CR + PgBouncer Pooler |
 | 3 | `redis` | Bitnami legacy Redis 8.2.1 (standalone, AOF on) |
-| 4 | `api` | Fastify web Deployment, worker Deployment, migration/seed hooks |
+| 3 | `nats` | NATS JetStream with a 10 GiB file-store PVC |
+| 4 | `api` | Fastify web, realtime gateway, scheduler worker, score worker, payout worker, migration/seed hooks |
 
 `sealed-secret-payloads` is in the same wave as `sealed-secrets` because
 the encrypted YAMLs reference the controller namespace; the controller
@@ -247,5 +249,6 @@ of 10 GiB free tier), Docker Hub, Let's Encrypt, GitHub Actions
 - Prometheus / Loki / Grafana
 - DO Load Balancer
 - Snapshots
-- API HPA above 4 replicas before Phase 2 realtime/worker changes
+- REST API HPA above 4 replicas before Phase 2 load gates are rehearsed
+- Realtime or score-worker HPA above 8 replicas before load gates are rehearsed
 - Bandwidth-paid CDN (Cloudflare free is enough)

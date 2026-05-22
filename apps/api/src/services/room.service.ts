@@ -14,6 +14,7 @@ import {
   getLiveLeaderboardFromRedis,
   refreshLiveScoreForPlayer,
 } from "./live-score.service.js";
+import { publishAcceptedAnswer } from "./nats.js";
 
 export type JoinResult =
   | { quizId: string; roomPlayerId: string; userId: string }
@@ -267,13 +268,28 @@ export async function submitAnswer(
     throw e;
   }
 
-  // Defer all fan-out work. The user already has their feedback; everyone
-  // else can wait the broadcast tick.
-  await refreshLiveScoreForPlayer(quiz.id, roomPlayer.id);
-  enqueuePostAnswerBroadcasts({
+  // Defer all fan-out work. With NATS enabled the score worker owns Redis
+  // score refresh + leaderboard/distribution broadcasts. Local/dev without
+  // NATS falls back to the Phase 1 inline async path.
+  const queued = await publishAcceptedAnswer({
+    version: 1,
     quizId: quiz.id,
     questionId: question.id,
+    roomPlayerId: roomPlayer.id,
+    userId: roomPlayer.userId,
+    choiceId: input.choiceId,
+    isCorrect,
+    points,
+    timeTakenMs,
+    acceptedAt: new Date().toISOString(),
   });
+  if (!queued) {
+    await refreshLiveScoreForPlayer(quiz.id, roomPlayer.id);
+    enqueuePostAnswerBroadcasts({
+      quizId: quiz.id,
+      questionId: question.id,
+    });
+  }
 
   return { isCorrect, points };
 }

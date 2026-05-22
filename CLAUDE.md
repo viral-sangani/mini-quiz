@@ -1,7 +1,7 @@
 # Mini Quiz — Agent Guide
 
 > Read this first. It's the front door for every agent session in this repo.
-> Last updated: **2026-05-07** (Vercel projects + DB-free admin).
+> Last updated: **2026-05-22** (Phase 2 realtime gateway + NATS).
 
 ## What this is
 
@@ -18,9 +18,10 @@ There are 4 deployable units:
 | `apps/api` | Fastify 5 + Prisma + viem | **DOKS** (long-lived single-region) |
 | `packages/shared` | TypeScript types + utils | consumed by all three |
 
-The API is **stateful** by design: in-process scheduler tick + in-process
-SSE broker. Don't refactor those into Vercel Functions — that's the whole
-reason the API lives on a VPS-style host.
+The API stack is **long-lived** by design: REST API pods, a dedicated SSE
+realtime gateway, score workers, one scheduler/finalizer worker, one payout
+worker, Redis hot scores, and NATS JetStream. Don't refactor these into Vercel
+Functions — that's the whole reason the backend lives on a VPS-style host.
 
 ## Where to start, by task type
 
@@ -56,15 +57,13 @@ without it.
 4. **`packages/shared` is ESM-built.** When you add a new file there, the
    `.js` extension on relative imports is mandatory (NodeNext-style). The
    build emits `dist/`; the package's `main` points there.
-5. **The scheduler in `apps/api/src/services/scheduler.ts` runs every 1s
-   in-process.** It's a SINGLE replica today. If you add HPA-driven
-   horizontal scale on the api Deployment, the scheduler must move to a
-   leader-elected single-replica StatefulSet first or you'll get duplicate
-   broadcasts.
-6. **The SSE broker is in-process** (`apps/api/src/sse/broker.ts`,
-   `globalThis` registry). With horizontal api replicas, fan-out across
-   pods does NOT work. Move to Redis pub/sub before scaling api beyond 1
-   replica during a live game.
+5. **The scheduler in `apps/api/src/services/scheduler.ts` runs every 1s in
+   the scheduler worker.** Keep `deploy/api-worker` at exactly one replica
+   unless leader election is added.
+6. **Realtime fanout uses NATS first, with local in-process subscribers per
+   realtime pod.** `apps/api/src/sse/broker.ts` still keeps local client sets,
+   but cross-pod delivery goes through NATS room subjects; Redis remains a
+   fallback for local/dev. Route production SSE to `api-realtime`.
 7. **Don't introduce new test infra** without asking. There are no tests
    today, and adding Jest/Vitest mid-feature has compounded with TS-config
    pain in the past. If you write a test, use `node --test` for now.

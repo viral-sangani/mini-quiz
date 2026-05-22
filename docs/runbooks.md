@@ -284,23 +284,30 @@ argocd login localhost:8080 --username admin --password "$ARGO_PW" --insecure --
 argocd app sync <app-name> --force
 ```
 
-## Pre-warm the api before a scheduled game
+## Pre-warm live-event capacity before a scheduled game
 
 The first scale-up takes ~3–5 min from cluster autoscaler cold-start.
 Don't wait until traffic arrives:
 
 ```bash
-# 30 min before the scheduled game
+# 30 min before a campaign-sized scheduled game
 kubectl -n api patch hpa api --type merge -p '{"spec":{"minReplicas":4,"maxReplicas":4}}'
-kubectl -n api get pods -w     # confirm 4 ready
+kubectl -n api patch hpa api-realtime --type merge -p '{"spec":{"minReplicas":4,"maxReplicas":8}}'
+kubectl -n api patch hpa api-score-worker --type merge -p '{"spec":{"minReplicas":4,"maxReplicas":8}}'
+kubectl -n api get pods -w     # confirm all warmed pods are ready
 
 # Right after the game (or 15 min after if testing)
 kubectl -n api patch hpa api --type merge -p '{"spec":{"minReplicas":2,"maxReplicas":4}}'
+kubectl -n api patch hpa api-realtime --type merge -p '{"spec":{"minReplicas":2,"maxReplicas":8}}'
+kubectl -n api patch hpa api-score-worker --type merge -p '{"spec":{"minReplicas":2,"maxReplicas":8}}'
 ```
 
-**Current state**: Phase 1 uses Redis pub/sub for cross-pod SSE fanout, one
-worker pod for scheduler/payout background work, and PgBouncer for app
-Postgres connections. Keep the worker at exactly one replica.
+**Current state**: Phase 2 uses NATS JetStream for room events and accepted
+answers, a dedicated realtime gateway for SSE, score workers for async live
+score refreshes, one scheduler/finalizer worker for quiz transitions, one
+payout worker for prize transfers, Redis for hot live scores, and PgBouncer for
+app Postgres connections. Keep `deploy/api-worker` and
+`deploy/api-payout-worker` at exactly one replica.
 
 ## Phase 0 scalability checks
 
@@ -363,6 +370,67 @@ Rollback to single-pod web mode:
 # worker.enabled: true
 git add deploy/charts/api/values.yaml
 git commit -m "rollback: pin api hpa to one pod"
+git push viral HEAD:main
+kubectl -n api rollout status deploy/api
+kubectl -n api rollout status deploy/api-worker
+```
+
+## Phase 2 event-readiness checks
+
+Verify the event spine and runtime split after deploy:
+
+```bash
+kubectl -n data get statefulset nats
+kubectl -n data exec deploy/nats-box -- nats stream ls
+kubectl -n data exec deploy/nats-box -- nats consumer info ROOM_ANSWERS score-workers
+kubectl -n api get deploy api api-realtime api-score-worker api-worker api-payout-worker
+kubectl -n api get hpa api api-realtime api-score-worker
+kubectl -n api logs deploy/api-realtime --tail=50
+kubectl -n api logs deploy/api-score-worker --tail=50
+```
+
+Expected:
+- `deploy/api` serves REST/admin/player HTTP routes.
+- `deploy/api-realtime` owns `/rooms/:code/events` SSE traffic.
+- `deploy/api-score-worker` has 2-8 replicas managed by HPA.
+- `deploy/api-worker` has exactly 1 replica and owns scheduler/finalizer work.
+- `deploy/api-payout-worker` has exactly 1 replica and owns prize transfer commands.
+- NATS streams `ROOM_EVENTS`, `ROOM_ANSWERS`, and `PAYOUT_EVENTS` exist.
+- `ROOM_ANSWERS` consumer `score-workers` has low pending/ack lag during tests.
+
+Cross-pod smoke test:
+
+```bash
+# Open one SSE connection through the public URL, then submit an answer through
+# the API. The SSE stream should receive leaderboard/answer_distribution without
+# hitting the REST API pod that accepted the answer.
+curl -N https://api.miniquiz.club/rooms/<code>/events
+```
+
+Phase 2 load-gate runner:
+
+```bash
+PHASE2_BASE_URL=https://api.miniquiz.club \
+PHASE2_CODE=<room-code> \
+PHASE2_USERS=10000 \
+PHASE2_CONCURRENCY=250 \
+pnpm loadtest:phase2
+```
+
+Repeat with `PHASE2_USERS=25000`, `50000`, and `100000` only after the
+previous gate is stable and the realtime/score-worker HPAs are pre-warmed.
+
+Rollback to Phase 1-style embedded SSE:
+
+```bash
+# Edit deploy/charts/api/values.yaml:
+# realtime.enabled: false
+# scoreWorker.enabled: false
+# embeddedSse: true
+# hpa.minReplicas: 1
+# hpa.maxReplicas: 1
+git add deploy/charts/api
+git commit -m "rollback: disable phase two realtime split"
 git push viral HEAD:main
 kubectl -n api rollout status deploy/api
 kubectl -n api rollout status deploy/api-worker

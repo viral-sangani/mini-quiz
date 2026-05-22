@@ -19,6 +19,7 @@ import { dailyAdminRoutes } from "./routes/daily.admin.js";
 import { practiceAdminRoutes } from "./routes/practice.admin.js";
 import { aiGenAdminRoutes } from "./routes/ai-gen.admin.js";
 import { treasuryAdminRoutes } from "./routes/treasury.admin.js";
+import { roomEventRoutes } from "./routes/room-events.js";
 import { startBroker, stopBroker } from "./sse/broker.js";
 
 async function main() {
@@ -62,6 +63,9 @@ async function main() {
   await app.register(publicProfileRoutes);
   await app.register(publicLeaderboardRoutes);
   await app.register(roomRoutes);
+  if (config.ENABLE_EMBEDDED_SSE) {
+    await app.register(roomEventRoutes);
+  }
   await app.register(adminQuizRoutes);
   await app.register(adminPayoutRoutes);
   await app.register(adminStatsRoutes);

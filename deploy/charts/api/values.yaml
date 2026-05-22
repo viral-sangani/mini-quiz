@@ -18,6 +18,49 @@ worker:
     limits:
       memory: 512Mi
 
+realtime:
+  enabled: true
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 4000
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 65
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      memory: 768Mi
+
+scoreWorker:
+  enabled: true
+  replicaCount: 2
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      memory: 768Mi
+
+payoutWorker:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
 service:
   type: ClusterIP
   port: 4000
@@ -48,6 +91,8 @@ hpa:
   maxReplicas: 4
   targetCPUUtilizationPercentage: 70
 
+embeddedSse: false
+
 # Static env injected into both the api Deployment and the migration Job.
 env:
   NODE_ENV: production
@@ -73,3 +118,7 @@ postgres:
 redis:
   service: redis-master.data.svc.cluster.local
   port: 6379
+
+nats:
+  service: nats.data.svc.cluster.local
+  port: 4222

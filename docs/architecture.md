@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-22** (Phase 1 Redis fanout + worker split).
+> Last updated: **2026-05-22** (Phase 2 NATS event spine + realtime gateway).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -24,15 +24,17 @@
 │                         ▼                                      │
 │ ┌──────────────────────────────────────────────────────┐      │
 │ │ DigitalOcean Kubernetes (DOKS, NYC3, 1 node)         │      │
-│ │  ingress-nginx (hostNetwork) ─► api Service           │      │
+│ │  ingress-nginx (hostNetwork) ─► api / realtime Svc    │      │
 │ │                                  ▲                    │      │
 │ │  ┌─────────────┐                  │                   │      │
 │ │  │ apps/api    │ ◄─ DATABASE_URL─┼─► PgBouncer       │      │
-│ │  │ Fastify     │ ◄─ REDIS_URL ───┼─► Redis (Bitnami) │      │
-│ │  │ Prisma      │                  │                   │      │
-│ │  │ SSE clients │                  │                   │      │
+│ │  │ REST Fastify│ ◄─ REDIS_URL ───┼─► Redis hot scores│      │
+│ │  │ Prisma      │ ◄─ NATS_URL ────┼─► NATS JetStream  │      │
 │ │  └─────────────┘                  │                   │      │
-│ │  api-worker ───► scheduler/payouts ┘                   │      │
+│ │  realtime-gateway ─► SSE clients                       │      │
+│ │  api-worker ───────► scheduler/finalizer               │      │
+│ │  score-worker ─────► answer stream → hot scores        │      │
+│ │  payout-worker ────► prize transfer commands           │      │
 │ └──────────────────────────────────────────────────────┘      │
 │                         │                                      │
 │                  viem (CELO gas for prize transfers)           │
@@ -49,7 +51,9 @@
 - Auth: shared JWT (`jose`), signed by admin app, verified here.
 - Routes (`apps/api/src/routes/`):
   - `health.ts` — readiness/liveness probe.
-  - `rooms.ts` — player joins, answers, SSE event stream.
+  - `rooms.ts` — player joins, answers, and leaderboard reads.
+  - `room-events.ts` — SSE event stream, mounted by the realtime gateway and
+    optionally by the web API for local/dev.
   - `quizzes.public.ts` — anonymous read-only quiz info.
   - `leaderboard.public.ts` — anonymous leaderboard read.
   - `profile.public.ts` — player profile + onboarding.
@@ -60,12 +64,22 @@
   - `ai-gen.admin.ts` — admin-only AI topic suggestions + question generation.
 - Services (`apps/api/src/services/`): business logic, called by routes.
 - Runtime split:
-  - `server.ts` starts Fastify and Redis-backed SSE fanout only.
-  - `worker.ts` starts the scheduler and payout background work.
+  - `server.ts` starts REST/admin/player Fastify routes. In production it sets
+    `ENABLE_EMBEDDED_SSE=false` so long-lived SSE is not held by web pods.
+  - `realtime-gateway.ts` starts only health + `/rooms/:code/events` and owns
+    SSE fanout for connected clients.
+  - `worker.ts` starts the scheduler/finalizer. Legacy `APP_ROLE=worker`
+    still combines scheduler + payout commands for local/dev.
+  - `score-worker.ts` consumes accepted answer events from NATS JetStream and
+    updates hot live leaderboard state.
+  - `payout-worker.ts` consumes payout commands and signs/sends prize
+    transfers.
   - `sse/broker.ts` keeps local SSE clients per pod, but broadcasts through
-    Redis pub/sub so any API pod can deliver events from any other pod.
+    NATS room event subjects first, with Redis pub/sub as fallback.
   - `live-score.service.ts` stores LIVE leaderboard rows in Redis Sorted Sets
     and hashes. Postgres remains the final source of truth.
+  - `nats.ts` owns JetStream streams for room events, accepted answers, and
+    payout event subjects.
 
 ### `apps/quiz` — MiniPay player
 
@@ -126,16 +140,19 @@ read the schema. Key relationships at a glance:
 1. Player taps QR / deep link → `apps/quiz/play/[code]`.
 2. Frontend `POST /rooms/:code/join` with display name + wallet.
 3. Server creates `RoomPlayer` row, returns `roomPlayerId` + JWT.
-4. Frontend opens SSE `/rooms/:code/events?token=...`.
+4. Frontend opens SSE `/rooms/:code/events?token=...`; production ingress
+   routes this path to the realtime gateway service.
 5. Scheduler tick flips quiz to LIVE only after `scheduledStart` has passed
    and `playerCount >= minParticipants`. If quorum is missing, the quiz stays
    `SCHEDULED`, the lobby stays joinable, and SSE broadcasts `lobby_updated`.
    When quorum is reached, `quiz_started` moves clients to the question screen.
 6. Each question: server broadcasts `question_started` with
    `endsAt` timestamp. Frontend counts down locally.
-7. Player answers: `POST /rooms/:code/answer`. Server scores it,
-   inserts `Answer`, refreshes that player's Redis live score, and broadcasts
-   a capped `leaderboard` + `answer_distribution`.
+7. Player answers: `POST /rooms/:code/answer`. Server validates identity,
+   timing, and idempotency, inserts `Answer`, then publishes an accepted-answer
+   event to NATS. The score worker refreshes that player's Redis live score and
+   broadcasts a capped `leaderboard` + `answer_distribution`. Local/dev without
+   NATS falls back to the Phase 1 inline refresh.
 8. Question time-up: server broadcasts `question_ended` with
    correct answer; client shows reveal.
 9. Last question + buffer: scheduler tick flips quiz to ENDED →
@@ -182,8 +199,8 @@ falls back to the DB aggregation path.
    - Reads top-N from `leaderboard(quizId)` where N =
      `quiz.prizeAmounts.length`.
    - For each ranked player with `walletAddress != null`: creates
-     `Payout` row at `APPROVED`, then the worker signs + sends the prize token transfer via
-     viem. ERC-20 prize transfers omit `feeCurrency`, so gas is paid in CELO
+     `Payout` row at `APPROVED`, then the worker signs + sends the prize token
+     transfer via viem. ERC-20 prize transfers omit `feeCurrency`, so gas is paid in CELO
      and exact USDT/USDC prize balances can be sent without the gas fee
      reducing that same token first.
    - On success: row → `CONFIRMED` with `txHash`.
@@ -191,9 +208,12 @@ falls back to the DB aggregation path.
      retry via `POST /admin/payouts/:id/approve`.
 4. Best-effort badge eval runs after.
 
-The scheduler and payout confirmation loop run in the worker pod, not in web
-API pods. Admin manual payout retries publish worker commands when Redis is
-available and fall back to inline processing only for local/dev without Redis.
+The scheduler/finalizer runs in the single `api-worker` pod, while payout
+transfer commands run in the single `api-payout-worker` pod. Admin manual
+payout retries publish worker commands when Redis is available and fall back to
+inline processing only for local/dev without Redis. Final standings are read
+from Postgres-backed leaderboard aggregation after the quiz is `ENDED`; Redis
+live scores are hot-path state, not payout truth.
 
 ## Environment variables
 
@@ -208,10 +228,11 @@ boot). Frontend env vars in each app's `next.config.mjs` and
 - **Vercel**: project Environment Variables panel for `apps/quiz` and
   `apps/admin`. Set `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`.
 - **Cluster-injected**: `PGUSER`, `PGPASSWORD`, `REDIS_PASSWORD`,
-  `DATABASE_URL`, `REDIS_URL` — composed in
+  `DATABASE_URL`, `REDIS_URL`, `NATS_URL` — composed in
   `deploy/charts/api/templates/deployment.yaml` from the `miniquiz-pg-app`
-  + `redis-auth` Secrets. Web and worker pods use PgBouncer; migration and
-  seed Jobs use the direct CNPG primary service.
+  + `redis-auth` Secrets and the in-cluster NATS service. Web, realtime, and
+  worker pods use PgBouncer; migration and seed Jobs use the direct CNPG
+  primary service.
 
 ## Storage usage
 
@@ -222,16 +243,15 @@ boot). Frontend env vars in each app's `next.config.mjs` and
 | `miniquiz-tfstate` | OpenTofu state (`infra.tfstate`) — read+written by `infra/backend.tf` | ~18 KiB / 10 GiB free tier |
 
 Cost: $0/mo (well below R2 free tier of 10 GiB storage + zero egress).
-Future use: Postgres WAL backups will land here too — same free tier
-covers it for the foreseeable future.
 
-**DO Block Storage** (CSI-provisioned PVCs) — **2 volumes**, both
-attached to the single worker node:
+**DO Block Storage** (CSI-provisioned PVCs) — **3 volumes**, attached to
+cluster nodes as pods schedule:
 
 | PVC | Namespace | Mounted by | Size | Declared in |
 |---|---|---|---|---|
 | `miniquiz-pg-1` | `data` | CNPG Postgres pod | 30 GiB | `deploy/manifests/postgres-cluster.yaml` `spec.storage.size` |
 | `redis-data-redis-master-0` | `data` | Bitnami Redis master | 5 GiB | `deploy/apps/redis.yaml` Helm values `master.persistence.size` |
+| `nats-js-nats-0` | `data` | NATS JetStream | 10 GiB | `deploy/apps/nats.yaml` Helm values `config.jetstream.fileStore.pvc.size` |
 
 StorageClass: `do-block-storage` (default, `Delete` reclaim,
 `allowVolumeExpansion: true`). Volumes are real DigitalOcean Volumes
@@ -250,14 +270,11 @@ PVCs only.
 ## What's deliberately not here
 
 - **No Postgres replica.** Single instance. PoC tradeoff.
-- **No Postgres backups configured.** Add `backup.barmanObjectStore`
-  on the CNPG `Cluster` to ship WAL to Cloudflare R2 (free tier 10 GB).
 - **No Prometheus / Loki / Grafana.** Logs via `kubectl logs`.
 - **No DO Load Balancer** ($12/mo saved). Cloudflare proxies → node IP
   → ingress-nginx running with `hostNetwork: true`.
-- **No PgBouncer.** Prisma connects directly to CNPG's RW Service.
-  Add when api hits >100 concurrent connections.
-- **No queue / worker tier.** Auto-payouts run inline; see warning above.
-- **No HPA on the api Deployment yet.** Single replica. HPA chart
-  template exists but minReplicas=maxReplicas=1 effectively until SSE
-  fan-out moves to Redis pub/sub.
+- **No dedicated WebSocket gateway.** SSE stays the user-facing realtime
+  transport until bidirectional client events are actually needed.
+- **No queue-based write-behind for Postgres answers yet.** The API still
+  writes the `Answer` row before publishing to NATS so Postgres remains the
+  source of truth.

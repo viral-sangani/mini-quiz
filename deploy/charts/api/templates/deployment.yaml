@@ -32,6 +32,8 @@ spec:
             {{- end }}
             - name: APP_ROLE
               value: "web"
+            - name: ENABLE_EMBEDDED_SSE
+              value: {{ .Values.embeddedSse | quote }}
             - name: PGUSER
               valueFrom:
                 secretKeyRef:
@@ -51,6 +53,8 @@ spec:
               value: "postgresql://$(PGUSER):$(PGPASSWORD)@{{ .Values.postgres.service }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}?{{ .Values.postgres.pooledParams }}"
             - name: REDIS_URL
               value: "redis://default:$(REDIS_PASSWORD)@{{ .Values.redis.service }}:{{ .Values.redis.port }}"
+            - name: NATS_URL
+              value: "nats://{{ .Values.nats.service }}:{{ .Values.nats.port }}"
           envFrom:
             - secretRef:
                 name: {{ .Values.secretRefs.appSecret }}
