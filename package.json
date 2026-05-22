@@ -12,6 +12,7 @@
     "dev:quiz": "pnpm --filter @mini-quiz/quiz dev",
     "dev:admin": "pnpm --filter @mini-quiz/admin dev",
     "dev:ngrok": "bash scripts/dev-ngrok.sh",
+    "dev:phase2": "bash scripts/dev-phase2-local.sh",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
