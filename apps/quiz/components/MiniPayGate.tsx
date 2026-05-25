@@ -40,7 +40,7 @@ export function MiniPayGate({ targetUrl }: { targetUrl: string }) {
           <Mango pose="wave" size={120} />
           <h1 className="mq-h1" style={{ fontSize: 28 }}>Open in MiniPay</h1>
           <p className="mq-body" style={{ fontSize: 15 }}>
-            You need the MiniPay wallet to play and win USDT prizes.
+            You need the MiniPay wallet to play and win stablecoin prizes.
           </p>
         </div>
 

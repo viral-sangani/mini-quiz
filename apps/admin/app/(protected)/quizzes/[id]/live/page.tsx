@@ -171,10 +171,10 @@ export default function LiveProjectorPage({
               />
               <KpiCard label="Avg correct" value={`${live.avgCorrectPct}%`} />
               <KpiCard
-                label="Pool USDT"
+                label="Pool"
                 value={`$${quiz.prizeAmounts
                   .reduce((a, b) => a + Number(b || 0), 0)
-                  .toString()}`}
+                  .toString()} ${quiz.payoutToken}`}
                 delta={`Top ${quiz.prizeAmounts.length} winners`}
               />
             </KpiGrid>

@@ -136,13 +136,15 @@ managed manually.
 
 ---
 
-### 6. Argo source repo is `viral-sangani/mini-quiz` (public mirror), not `celo-org/mini-quiz`
+### 6. Argo source repo is `celo-org/mini-quiz`
 
 **Context**: `celo-org` requires admin approval for fine-grained PATs.
 Approval was pending and we needed to ship for a team demo.
 
-**Decision**: Mirror the repo to `viral-sangani/mini-quiz` (public),
-point Argo at it, push to both. Ship today.
+**Decision**: Argo initially read from the public
+`viral-sangani/mini-quiz` mirror to unblock the demo. After Celo org approval,
+Argo was moved to read from `celo-org/mini-quiz` using a fine-grained,
+read-only GitHub token.
 
 **Why**: Unblocks the demo without waiting on an org admin. Public mirror
 contains zero secrets (everything sensitive is sealed).
@@ -153,12 +155,11 @@ approval). Pull the repo into a self-hosted Argo Image Updater
 config.
 
 **Consequences**:
-- We push to both remotes (`origin` = celo-org, `viral` = personal).
-  Drift is possible if we forget to push to one.
-- Anyone can read the repo. Deliberate — there are no secrets in it.
-- When the `celo-org` PAT lands, single-line change in
-  `infra/terraform.tfvars` + sed across `deploy/apps/*.yaml` flips Argo
-  to read from celo-org. Personal repo can be archived.
+- API deploys should be pushed to `origin` (`celo-org/mini-quiz`).
+- The Viral mirror can remain temporarily for Vercel frontend deploys, but the
+  API image workflow is guarded so only `celo-org/mini-quiz` can build and bump
+  the backend chart.
+- The Argo repo credential lives in the cluster, not in GitHub Actions secrets.
 
 ---
 

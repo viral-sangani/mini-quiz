@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { PayoutStatus } from "@mini-quiz/shared";
+import type { PayoutStatus, PayoutTokenSymbol } from "@mini-quiz/shared";
 import { BLOCKSCOUT_TX } from "@mini-quiz/shared";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
@@ -18,6 +18,7 @@ type Detail = {
     quizId: string;
     quizTitle: string;
     quizCode: string;
+    payoutToken: PayoutTokenSymbol;
     prizeAmounts: string[];
     rank: number;
     amount: string;
@@ -118,7 +119,7 @@ export default function PayoutDetailPage({
             <div className="adm-page-h" style={{ marginTop: 8 }}>
               <div>
                 <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  ${data.payout.amount} USDT to{" "}
+                  ${data.payout.amount} {data.payout.payoutToken} to{" "}
                   {data.payout.user.displayName ?? "Player"}{" "}
                   <PayoutStatusPill status={data.payout.status} />
                 </h1>
@@ -222,7 +223,7 @@ export default function PayoutDetailPage({
                         }}
                       >
                         {data.payout.user.gamesPlayed} games · $
-                        {data.payout.user.lifetimeUsdt} USDT lifetime · {data.payout.user.totalXp.toLocaleString()} XP
+                        {data.payout.user.lifetimeUsdt} lifetime prizes · {data.payout.user.totalXp.toLocaleString()} XP
                       </div>
                       {data.payout.user.walletAddress && (
                         <div
@@ -266,7 +267,10 @@ export default function PayoutDetailPage({
                         </DetailRow>
                         <DetailRow label="Pool & rule">
                           {data.payout.prizeAmounts.length} ranks · rank{" "}
-                          {data.payout.rank} takes <b>${data.payout.amount}</b>
+                          {data.payout.rank} takes{" "}
+                          <b>
+                            ${data.payout.amount} {data.payout.payoutToken}
+                          </b>
                         </DetailRow>
                       </tbody>
                     </table>
@@ -282,7 +286,7 @@ export default function PayoutDetailPage({
                     <table className="adm-table" style={{ borderCollapse: "separate" }}>
                       <tbody>
                         <DetailRow label="Token">
-                          USDT on Celo
+                          {data.payout.payoutToken} on Celo
                         </DetailRow>
                         <DetailRow label="Token address">
                           <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}>
@@ -332,7 +336,11 @@ export default function PayoutDetailPage({
                       value="$0.00"
                       sub="0% on cash games"
                     />
-                    <SummaryRow label="Network fee" value="$0.00" sub="paid in USDT" />
+                    <SummaryRow
+                      label="Network fee"
+                      value="$0.00"
+                      sub="paid by treasury"
+                    />
                     <div
                       style={{
                         height: 1,

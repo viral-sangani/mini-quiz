@@ -132,7 +132,7 @@ export default function OverviewPage() {
             }
           />
           <KpiCard
-            label="Pool today (USDT)"
+            label="Pool today"
             value={stats ? `$${stats.kpis.poolUsdtToday}` : "—"}
           />
           <KpiCard
@@ -269,7 +269,7 @@ export default function OverviewPage() {
                         icon="alert"
                         tone="wrong"
                         title={`${stats.attention.failedPayouts.count} payouts failed`}
-                        sub={`$${stats.attention.failedPayouts.sumUsdt} USDT stuck — retry or investigate`}
+                        sub={`$${stats.attention.failedPayouts.sumUsdt} stuck — retry or investigate`}
                         href="/payouts?status=FAILED"
                       />
                     )}

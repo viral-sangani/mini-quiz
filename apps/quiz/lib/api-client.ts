@@ -1,7 +1,27 @@
 // Thin wrapper around fetch() that points at the Fastify backend.
 
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+  resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000");
+
+function resolveApiBaseUrl(configuredUrl: string): string {
+  if (
+    process.env.NODE_ENV === "development" &&
+    typeof window !== "undefined" &&
+    isLocalhostApi(configuredUrl) &&
+    !isLocalBrowserHost(window.location.hostname)
+  ) {
+    return "/api/backend";
+  }
+  return configuredUrl;
+}
+
+function isLocalhostApi(value: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/)?$/i.test(value);
+}
+
+function isLocalBrowserHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
 
 export class ApiError extends Error {
   status: number;

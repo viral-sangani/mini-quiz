@@ -156,9 +156,11 @@ fi
 
 if PUBLIC_API_URL="$(discover_ngrok_url_for_port 4000)"; then
   echo "Found API ngrok tunnel: $PUBLIC_API_URL"
+  API_CLIENT_URL="$PUBLIC_API_URL"
 else
   PUBLIC_API_URL="$LOCAL_API_URL"
-  echo "No ngrok tunnel found for localhost:4000; using local API URL."
+  API_CLIENT_URL="/api/backend"
+  echo "No ngrok tunnel found for localhost:4000; player app will proxy API calls through the quiz URL."
 fi
 
 export DATABASE_URL="${DATABASE_URL:-postgresql://miniquiz:miniquiz@localhost:5432/miniquiz?schema=public}"
@@ -168,8 +170,9 @@ if [ -z "${INITIAL_ADMIN_PASSWORD:-}" ] || [[ "${INITIAL_ADMIN_PASSWORD:-}" == r
   export INITIAL_ADMIN_PASSWORD="LocalAdmin123"
 fi
 export NEXTAUTH_URL="$LOCAL_ADMIN_URL"
-export NEXT_PUBLIC_API_BASE_URL="$PUBLIC_API_URL"
+export NEXT_PUBLIC_API_BASE_URL="$API_CLIENT_URL"
 export NEXT_PUBLIC_QUIZ_BASE_URL="$PUBLIC_QUIZ_URL"
+export QUIZ_API_PROXY_TARGET="$LOCAL_API_URL"
 export CORS_ORIGIN="$PUBLIC_QUIZ_URL,$PUBLIC_API_URL,$LOCAL_QUIZ_URL,$LOCAL_ADMIN_URL"
 export PORT="${PORT:-4000}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"

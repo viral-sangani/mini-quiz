@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import type { LeaderboardRow, PublicPayout } from "@mini-quiz/shared";
+import type { LeaderboardRow, PayoutTokenSymbol, PublicPayout } from "@mini-quiz/shared";
 import { BLOCKSCOUT_TX } from "@mini-quiz/shared";
 
 const AVATAR_EMOJIS = [
@@ -53,10 +53,12 @@ export function Leaderboard({
   rows,
   highlightUserId,
   payouts = [],
+  payoutToken = "USDT",
 }: {
   rows: LeaderboardRow[];
   highlightUserId?: string;
   payouts?: PublicPayout[];
+  payoutToken?: PayoutTokenSymbol;
 }) {
   const top = rows.slice(0, 10);
   const rest = Math.max(0, rows.length - top.length);
@@ -131,8 +133,8 @@ export function Leaderboard({
                   <span>💸</span>
                   <span>
                     {payout.status === "CONFIRMED"
-                      ? `Received ${payout.amount} USDT ✓`
-                      : `${payout.amount} USDT on the way…`}
+                      ? `Received ${payout.amount} ${payoutToken} ✓`
+                      : `${payout.amount} ${payoutToken} on the way…`}
                   </span>
                 </motion.a>
               )}

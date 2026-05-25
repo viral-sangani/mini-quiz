@@ -21,7 +21,7 @@ const FILTERS: { id: StatusFilter; label: string }[] = [
   { id: "ENDED", label: "Ended" },
 ];
 
-function sumUsdt(amounts: string[]): string {
+function sumPool(amounts: string[]): string {
   let total = 0;
   for (const a of amounts) {
     const n = Number(a);
@@ -172,7 +172,7 @@ export default function QuizzesPage() {
                 <th>Difficulty</th>
                 <th className="num">Q's</th>
                 <th className="num">Players</th>
-                <th className="num">Pool USDT</th>
+                <th className="num">Pool</th>
                 <th>Trend</th>
                 <th></th>
               </tr>
@@ -227,7 +227,7 @@ export default function QuizzesPage() {
                       {q.playerCount.toLocaleString()}/{q.minParticipants.toLocaleString()}
                     </td>
                     <td className="num" style={{ fontWeight: 700 }}>
-                      ${sumUsdt(q.prizeAmounts)}
+                      ${sumPool(q.prizeAmounts)} {q.payoutToken}
                     </td>
                     <td>
                       <Sparkline

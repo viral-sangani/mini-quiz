@@ -1,0 +1,115 @@
+{{- if .Values.capacityPrewarmer.enabled -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "api.fullname" . }}-capacity-prewarmer
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "api.fullname" . }}-capacity-prewarmer
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "api.fullname" . }}-capacity-prewarmer
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "api.fullname" . }}-capacity-prewarmer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "api.fullname" . }}-capacity-prewarmer
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "api.fullname" . }}-capacity-prewarmer
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.capacityPrewarmer.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "api.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: capacity-prewarmer
+        spec:
+          serviceAccountName: {{ include "api.fullname" . }}-capacity-prewarmer
+          restartPolicy: Never
+          {{- if .Values.imagePullSecret }}
+          imagePullSecrets:
+            - name: {{ .Values.imagePullSecret }}
+          {{- end }}
+          containers:
+            - name: capacity-prewarmer
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["node", "dist/capacity-prewarmer.js"]
+              env:
+                {{- range $k, $v := .Values.env }}
+                - name: {{ $k }}
+                  value: {{ $v | quote }}
+                {{- end }}
+                - name: APP_ROLE
+                  value: "capacity-prewarmer"
+                - name: CAPACITY_PREWARMER_DRY_RUN
+                  value: {{ .Values.capacityPrewarmer.dryRun | quote }}
+                - name: CAPACITY_PREWARMER_NAMESPACE
+                  value: {{ .Values.capacityPrewarmer.namespace | quote }}
+                - name: CAPACITY_PREWARMER_WARM_LEAD_MS
+                  value: {{ .Values.capacityPrewarmer.warmLeadMs | quote }}
+                - name: CAPACITY_PREWARMER_COOLDOWN_MS
+                  value: {{ .Values.capacityPrewarmer.cooldownMs | quote }}
+                - name: CAPACITY_PREWARMER_NODE_POOL_ENABLED
+                  value: {{ .Values.capacityPrewarmer.nodePoolEnabled | quote }}
+                - name: DIGITALOCEAN_CLUSTER_NAME
+                  value: {{ .Values.capacityPrewarmer.digitalOceanClusterName | quote }}
+                - name: DIGITALOCEAN_NODE_POOL_NAME
+                  value: {{ .Values.capacityPrewarmer.digitalOceanNodePoolName | quote }}
+                - name: DIGITALOCEAN_NODE_POOL_MAX_NODES
+                  value: {{ .Values.capacityPrewarmer.digitalOceanNodePoolMaxNodes | quote }}
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secretRefs.postgresSecret }}
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secretRefs.postgresSecret }}
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secretRefs.redisSecret }}
+                      key: password
+                - name: DATABASE_URL
+                  value: "postgresql://$(PGUSER):$(PGPASSWORD)@{{ .Values.postgres.service }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}?{{ .Values.postgres.pooledParams }}"
+                - name: REDIS_URL
+                  value: "redis://default:$(REDIS_PASSWORD)@{{ .Values.redis.service }}:{{ .Values.redis.port }}"
+                - name: NATS_URL
+                  value: "nats://{{ .Values.nats.service }}:{{ .Values.nats.port }}"
+              envFrom:
+                - secretRef:
+                    name: {{ .Values.secretRefs.appSecret }}
+              resources:
+                {{- toYaml .Values.capacityPrewarmer.resources | nindent 16 }}
+{{- end }}

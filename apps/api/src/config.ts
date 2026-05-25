@@ -15,6 +15,7 @@ const schema = z.object({
       "realtime",
       "score-worker",
       "payout-worker",
+      "capacity-prewarmer",
     ])
     .default("web"),
   PORT: z.coerce.number().int().positive().default(4000),

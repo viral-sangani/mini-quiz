@@ -20,13 +20,13 @@ worker:
 
 realtime:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   service:
     type: ClusterIP
     port: 4000
   hpa:
     enabled: true
-    minReplicas: 2
+    minReplicas: 1
     maxReplicas: 8
     targetCPUUtilizationPercentage: 65
   resources:
@@ -38,10 +38,10 @@ realtime:
 
 scoreWorker:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   hpa:
     enabled: true
-    minReplicas: 2
+    minReplicas: 1
     maxReplicas: 8
     targetCPUUtilizationPercentage: 70
   resources:
@@ -87,9 +87,27 @@ resources:
 
 hpa:
   enabled: true
-  minReplicas: 2
+  minReplicas: 1
   maxReplicas: 4
   targetCPUUtilizationPercentage: 70
+
+capacityPrewarmer:
+  enabled: true
+  schedule: "* * * * *"
+  dryRun: false
+  namespace: api
+  warmLeadMs: 600000
+  cooldownMs: 600000
+  nodePoolEnabled: true
+  digitalOceanClusterName: miniquiz-prod
+  digitalOceanNodePoolName: main
+  digitalOceanNodePoolMaxNodes: 4
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
 
 embeddedSse: false
 

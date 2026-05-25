@@ -17,6 +17,7 @@ env:
 
 jobs:
   build-push:
+    if: github.repository == 'celo-org/mini-quiz'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -53,6 +54,7 @@ jobs:
 
   bump-chart:
     needs: build-push
+    if: github.repository == 'celo-org/mini-quiz'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -12,6 +12,7 @@
     "start:realtime": "node dist/realtime-gateway.js",
     "start:score-worker": "node dist/score-worker.js",
     "start:payout-worker": "node dist/payout-worker.js",
+    "start:capacity-prewarmer": "node dist/capacity-prewarmer.js",
     "typecheck": "tsc --noEmit",
     "lint": "echo \"no lint configured\"",
     "seed-admin": "tsx src/seed-admin.ts",

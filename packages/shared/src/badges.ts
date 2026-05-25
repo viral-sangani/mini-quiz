@@ -84,7 +84,7 @@ export const BADGE_CATALOG: readonly BadgeDef[] = [
     id: "first_usdt",
     icon: "gem",
     color: "sky-shade",
-    label: "First USDT",
+    label: "First prize",
     description: "Received your first prize on-chain",
   },
   {

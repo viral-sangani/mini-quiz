@@ -37,8 +37,8 @@ export function Mango({
 // Shared parrot palette. Body uses the live design tokens so the mascot
 // retints with palette changes; the rest are fixed brand colours.
 const P = {
-  body: "var(--primary)",
-  bodyDark: "var(--primary-shade)",
+  body: "var(--primary, #4CD050)",
+  bodyDark: "var(--primary-shade, #2FA833)",
   belly: "#FFE08A",
   bellyDark: "#E0B017",
   beak: "#FF9F1C",

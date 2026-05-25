@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-22** (Phase 2 NATS event spine + realtime gateway).
+> Last updated: **2026-05-25** (capacity prewarmer runtime).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -23,7 +23,7 @@
 │                  (Cloudflare proxy)                            │
 │                         ▼                                      │
 │ ┌──────────────────────────────────────────────────────┐      │
-│ │ DigitalOcean Kubernetes (DOKS, NYC3, 1 node)         │      │
+│ │ DigitalOcean Kubernetes (DOKS, NYC3, 1-4 nodes)       │      │
 │ │  ingress-nginx (hostNetwork) ─► api / realtime Svc    │      │
 │ │                                  ▲                    │      │
 │ │  ┌─────────────┐                  │                   │      │
@@ -35,6 +35,7 @@
 │ │  api-worker ───────► scheduler/finalizer               │      │
 │ │  score-worker ─────► answer stream → hot scores        │      │
 │ │  payout-worker ────► prize transfer commands           │      │
+│ │  capacity-prewarmer ► HPA + DOKS node pool min         │      │
 │ └──────────────────────────────────────────────────────┘      │
 │                         │                                      │
 │                  viem (CELO gas for prize transfers)           │
@@ -74,6 +75,9 @@
     updates hot live leaderboard state.
   - `payout-worker.ts` consumes payout commands and signs/sends prize
     transfers.
+  - `capacity-prewarmer.ts` runs as a once-per-minute CronJob. It watches paid
+    live quizzes and raises HPA minimums plus the DOKS node pool minimum around
+    active game windows, then returns to idle capacity.
   - `sse/broker.ts` keeps local SSE clients per pod, but broadcasts through
     NATS room event subjects first, with Redis pub/sub as fallback.
   - `live-score.service.ts` stores LIVE leaderboard rows in Redis Sorted Sets
@@ -224,7 +228,8 @@ boot). Frontend env vars in each app's `next.config.mjs` and
 - **DOKS**: SealedSecret `api-secrets` in the `api` namespace.
   Source-of-truth ciphertext in
   `deploy/manifests/sealed-secrets/api-secrets.yaml`. Plaintext in
-  `.env` (gitignored). To regenerate: see `runbooks.md`.
+  `.env` (gitignored). `DIGITALOCEAN_TOKEN` also lives here for the capacity
+  prewarmer. To regenerate: see `runbooks.md`.
 - **Vercel**: project Environment Variables panel for `apps/quiz` and
   `apps/admin`. Set `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`.
 - **Cluster-injected**: `PGUSER`, `PGPASSWORD`, `REDIS_PASSWORD`,

@@ -248,6 +248,31 @@ export async function consumeAcceptedAnswers(
   return messages;
 }
 
+export type ScoreWorkerLag = {
+  pending: number;
+  ackPending: number;
+  redelivered: number;
+};
+
+export async function scoreWorkerLag(
+  log?: FastifyBaseLogger,
+): Promise<ScoreWorkerLag> {
+  const connection = await getConnection(log);
+  if (!connection || !(await ensureJetStream(log))) {
+    throw new Error("NATS JetStream is unavailable");
+  }
+  const info = await connection
+    .jetstreamManager({ timeout: 2_000 })
+    .then((jsm) =>
+      jsm.consumers.info(ROOM_ANSWERS_STREAM, SCORE_WORKER_DURABLE),
+    );
+  return {
+    pending: info.num_pending ?? 0,
+    ackPending: info.num_ack_pending ?? 0,
+    redelivered: info.num_redelivered ?? 0,
+  };
+}
+
 export async function stopNats(
   handles: (Subscription | ConsumerMessages | null)[] = [],
 ): Promise<void> {

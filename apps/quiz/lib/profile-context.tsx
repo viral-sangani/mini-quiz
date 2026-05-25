@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { CheckUsernameResult, MyProfile, PublicUser } from "@mini-quiz/shared";
 import { api } from "./api-client";
-import { connectAddress, hasInjectedWallet } from "./minipay";
+import { connectAddress, isMiniPay } from "./minipay";
 
 // Possible states the player app can be in. Pages branch off this:
 //
@@ -23,6 +23,11 @@ import { connectAddress, hasInjectedWallet } from "./minipay";
 export type AuthState =
   | { status: "loading" }
   | { status: "no-wallet" }
+  | {
+      status: "profile-error";
+      walletAddress: `0x${string}`;
+      message: string;
+    }
   | {
       status: "needs-onboarding";
       walletAddress: `0x${string}`;
@@ -109,7 +114,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   const boot = useCallback(async () => {
     if (typeof window === "undefined") return;
-    if (!hasInjectedWallet()) {
+    if (!isMiniPay()) {
       setState({ status: "no-wallet" });
       return;
     }
@@ -119,7 +124,18 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         setState({ status: "no-wallet" });
         return;
       }
-      await refreshFromWallet(addr as `0x${string}`);
+      try {
+        await refreshFromWallet(addr as `0x${string}`);
+      } catch (error) {
+        setState({
+          status: "profile-error",
+          walletAddress: addr as `0x${string}`,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not load your Mini Quiz profile.",
+        });
+      }
     } catch {
       setState({ status: "no-wallet" });
     }

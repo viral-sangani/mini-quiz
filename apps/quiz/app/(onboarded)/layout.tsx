@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
-import { Mango } from "@/components/Mango";
+import { Loader } from "@/components/Loader";
 import { MiniPayGate } from "@/components/MiniPayGate";
+import { ProfileErrorScreen } from "@/components/ProfileErrorScreen";
 import { TabBar } from "@/components/TabBar";
 import { useProfile } from "@/lib/profile-context";
 
@@ -11,7 +12,7 @@ import { useProfile } from "@/lib/profile-context";
 // require a wallet + a complete profile; this layout enforces both gates.
 
 export default function OnboardedLayout({ children }: { children: ReactNode }) {
-  const { state } = useProfile();
+  const { state, refresh } = useProfile();
   const router = useRouter();
 
   useEffect(() => {
@@ -27,6 +28,15 @@ export default function OnboardedLayout({ children }: { children: ReactNode }) {
   if (state.status === "no-wallet") {
     const targetUrl = typeof window !== "undefined" ? window.location.href : "";
     return <MiniPayGate targetUrl={targetUrl} />;
+  }
+
+  if (state.status === "profile-error") {
+    return (
+      <ProfileErrorScreen
+        message={state.message}
+        onRetry={() => void refresh()}
+      />
+    );
   }
 
   if (state.status === "needs-onboarding") {
@@ -52,11 +62,9 @@ function BootingScreen() {
         minHeight: "100dvh",
         alignItems: "center",
         justifyContent: "center",
-        gap: 12,
       }}
     >
-      <Mango pose="think" size={120} />
-      <p className="mq-body" style={{ fontSize: 14 }}>Getting things ready…</p>
+      <Loader label="Getting things ready..." sub="Connecting to MiniPay" />
     </main>
   );
 }

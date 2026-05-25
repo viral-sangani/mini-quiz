@@ -18,7 +18,7 @@ export async function adminPayoutRoutes(app: FastifyInstance) {
         },
         include: {
           user: { select: { displayName: true, walletAddress: true } },
-          quiz: { select: { title: true, code: true } },
+          quiz: { select: { title: true, code: true, payoutToken: true } },
         },
         orderBy: [{ createdAt: "desc" }, { rank: "asc" }],
       });
@@ -28,6 +28,7 @@ export async function adminPayoutRoutes(app: FastifyInstance) {
           quizId: p.quizId,
           quizTitle: p.quiz.title,
           quizCode: p.quiz.code,
+          payoutToken: p.quiz.payoutToken,
           rank: p.rank,
           amount: p.amount,
           tokenAddress: p.tokenAddress,
@@ -78,7 +79,15 @@ export async function adminPayoutRoutes(app: FastifyInstance) {
               createdAt: true,
             },
           },
-          quiz: { select: { id: true, code: true, title: true, prizeAmounts: true } },
+          quiz: {
+            select: {
+              id: true,
+              code: true,
+              title: true,
+              prizeAmounts: true,
+              payoutToken: true,
+            },
+          },
         },
       });
       if (!p) return reply.code(404).send({ error: "Payout not found" });
@@ -101,6 +110,7 @@ export async function adminPayoutRoutes(app: FastifyInstance) {
           quizId: p.quizId,
           quizTitle: p.quiz.title,
           quizCode: p.quiz.code,
+          payoutToken: p.quiz.payoutToken,
           prizeAmounts: p.quiz.prizeAmounts,
           rank: p.rank,
           amount: p.amount,

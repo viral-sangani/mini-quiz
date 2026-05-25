@@ -2,6 +2,8 @@
 // Kept in plain TS so the frontend does not need to import Prisma.
 // Types here intentionally mirror the Prisma schema — keep them in sync.
 
+import type { PayoutTokenSymbol } from "./celo.js";
+
 export type Role = "USER" | "ADMIN";
 
 export type QuizStatus = "DRAFT" | "SCHEDULED" | "LIVE" | "ENDED" | "ARCHIVED";
@@ -47,6 +49,7 @@ export type PublicQuiz = {
   endedAt: string | null;
   questionTimeMs: number;
   prizeAmounts: string[];
+  payoutToken: PayoutTokenSymbol;
   minParticipants: number;
   lobbyOpenLeadMs: number;
   playersNeeded: number;

@@ -22,18 +22,11 @@ export function hasInjectedWallet(): boolean {
 }
 
 export async function connectAddress(): Promise<`0x${string}` | null> {
-  if (!hasInjectedWallet()) return null;
-  const client = createWalletClient({ chain: celo, transport: custom(window.ethereum!) });
+  if (!isMiniPay() || !window.ethereum) return null;
+  const provider: EIP1193Provider = window.ethereum;
+  const client = createWalletClient({ chain: celo, transport: custom(provider) });
   try {
     const [address] = await client.getAddresses();
-    if (address) return address;
-  } catch {
-    // fall through
-  }
-  try {
-    const [address] = (await window.ethereum!.request({
-      method: "eth_requestAccounts",
-    })) as `0x${string}`[];
     return address ?? null;
   } catch {
     return null;

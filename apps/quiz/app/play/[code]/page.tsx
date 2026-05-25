@@ -17,11 +17,13 @@ import { lobbyPhase } from "@mini-quiz/shared";
 import { Avatar } from "@/components/Avatar";
 import { fireConfetti } from "@/components/ConfettiBurst";
 import { Icon, type IconName } from "@/components/Icon";
+import { Loader } from "@/components/Loader";
 import { Mango } from "@/components/Mango";
 import { MQButton } from "@/components/MQButton";
 import { MQCard } from "@/components/MQCard";
 import { MiniPayGate } from "@/components/MiniPayGate";
 import { Pill } from "@/components/Pill";
+import { ProfileErrorScreen } from "@/components/ProfileErrorScreen";
 import { ProgressBar } from "@/components/ProgressBar";
 import { StatTile } from "@/components/StatTile";
 import { ApiError, api } from "@/lib/api-client";
@@ -138,6 +140,7 @@ function PlayInner() {
   // ---------------- Boot: gated on auth state ----------------
   useEffect(() => {
     if (authState.status === "loading") return;
+    if (authState.status === "profile-error") return;
     if (authState.status === "no-wallet") {
       setPhase("gate");
       return;
@@ -549,6 +552,14 @@ function PlayInner() {
 
   // ---------------- Render ----------------
 
+  if (authState.status === "profile-error") {
+    return (
+      <ProfileErrorScreen
+        message={authState.message}
+        onRetry={() => void refreshProfile()}
+      />
+    );
+  }
   if (phase === "booting") return <BootingScreen />;
   if (phase === "gate") return <MiniPayGate targetUrl={pageUrl} />;
   if (phase === "needs_onboarding") {
@@ -615,7 +626,7 @@ function PlayInner() {
 
 // ============== Screens ==============
 
-function BootingScreen({ label = "Loading…" }: { label?: string }) {
+function BootingScreen({ label = "Loading..." }: { label?: string }) {
   return (
     <main
       className="mq-screen"
@@ -623,22 +634,9 @@ function BootingScreen({ label = "Loading…" }: { label?: string }) {
         minHeight: "100dvh",
         alignItems: "center",
         justifyContent: "center",
-        gap: 12,
       }}
     >
-      <Mango pose="think" size={120} />
-      <p
-        style={{
-          fontFamily: "var(--font-display)",
-          fontWeight: 900,
-          fontSize: 14,
-          color: "var(--ink-soft)",
-          letterSpacing: 0.1,
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </p>
+      <Loader label={label} sub="Keep this page open." />
     </main>
   );
 }
@@ -798,9 +796,9 @@ function LobbyScreen({
   }, []);
   const startMs = quiz.scheduledStart ? new Date(quiz.scheduledStart).getTime() : 0;
   const left = Math.max(0, startMs - now);
-  const totalUsdt = quiz.prizeAmounts.reduce((s, a) => s + Number(a || 0), 0);
+  const totalPool = quiz.prizeAmounts.reduce((s, a) => s + Number(a || 0), 0);
   const waitingForQuorum = now >= startMs && !quiz.quorumMet;
-  const prizePoolLabel = formatTokenAmount(totalUsdt);
+  const prizePoolLabel = formatTokenAmount(totalPool);
   const timerLabel = waitingForQuorum
     ? `${quiz.playersNeeded} more`
     : formatLobbyTimerLabel(left);
@@ -813,7 +811,7 @@ function LobbyScreen({
 
   const inviteUrl =
     typeof window === "undefined" ? "" : `${window.location.origin}/play/${quiz.code}`;
-  const shareText = `${quiz.title} has a ${formatPrize(String(totalUsdt))} USDT prize pool. ${quiz.playersNeeded} more ${quiz.playersNeeded === 1 ? "player is" : "players are"} needed to start. Join here: ${inviteUrl}`;
+  const shareText = `${quiz.title} has a $${formatPrize(String(totalPool))} ${quiz.payoutToken} prize pool. ${quiz.playersNeeded} more ${quiz.playersNeeded === 1 ? "player is" : "players are"} needed to start. Join here: ${inviteUrl}`;
   const shareInvite = async () => {
     if (!inviteUrl) return;
     try {
@@ -935,58 +933,58 @@ function LobbyScreen({
           <Icon name="people" size={11} /> {quiz.playerCount}/{quiz.minParticipants} JOINED
         </span>
         <Pill style={{ fontSize: 11, padding: "4px 10px", color: "var(--accent-shade)", borderColor: "var(--accent)" }}>
-          ${prizePoolLabel} USDT
+          ${prizePoolLabel} {quiz.payoutToken}
         </Pill>
       </div>
 
       <div style={{ padding: "0 16px", flex: 1 }}>
-        <div
-          style={{
-            marginBottom: 14,
-            padding: 12,
-            borderRadius: 18,
-            background: waitingForQuorum ? "var(--primary-tint)" : "var(--card)",
-            border: "2px solid var(--line)",
-            boxShadow: "0 3px 0 0 var(--line)",
-          }}
-        >
+        {waitingForQuorum && (
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 10,
-              fontSize: 12,
-              fontWeight: 900,
-              fontFamily: "var(--font-display)",
-            }}
-          >
-            <span>{quiz.quorumMet ? "Quorum reached" : "Waiting for quorum"}</span>
-            <span>
-              {quiz.playersNeeded === 0
-                ? "Ready"
-                : `${quiz.playersNeeded} ${quiz.playersNeeded === 1 ? "player" : "players"} needed`}
-            </span>
-          </div>
-          <div
-            style={{
-              marginTop: 8,
-              height: 10,
-              borderRadius: 999,
-              background: "rgba(0,0,0,0.08)",
-              overflow: "hidden",
+              marginBottom: 14,
+              padding: 12,
+              borderRadius: 18,
+              background: "var(--primary-tint)",
+              border: "2px solid var(--line)",
+              boxShadow: "0 3px 0 0 var(--line)",
             }}
           >
             <div
               style={{
-                height: "100%",
-                width: `${Math.min(100, (quiz.playerCount / quiz.minParticipants) * 100)}%`,
-                background: "var(--primary)",
-                borderRadius: 999,
-                transition: "width 200ms ease",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                fontSize: 12,
+                fontWeight: 900,
+                fontFamily: "var(--font-display)",
               }}
-            />
+            >
+              <span>Waiting for quorum</span>
+              <span>
+                {quiz.playersNeeded} {quiz.playersNeeded === 1 ? "player" : "players"} needed
+              </span>
+            </div>
+            <div
+              style={{
+                marginTop: 8,
+                height: 10,
+                borderRadius: 999,
+                background: "rgba(0,0,0,0.08)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${Math.min(100, (quiz.playerCount / quiz.minParticipants) * 100)}%`,
+                  background: "var(--primary)",
+                  borderRadius: 999,
+                  transition: "width 200ms ease",
+                }}
+              />
+            </div>
           </div>
-        </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
           {top.map((p) => {
             const me = p.userId === viewerUserId;
@@ -1054,7 +1052,10 @@ function LobbyScreen({
             color: "var(--ink-soft)",
           }}
         >
-          {shareStatus ?? "Share the link to help the game start faster."}
+          {shareStatus ??
+            (waitingForQuorum
+              ? "Share the link to help the game start faster."
+              : "Invite more players before kickoff.")}
         </div>
       </div>
     </main>
@@ -1482,6 +1483,7 @@ function ResultsScreen({
   const winnerAmount =
     viewerPayout?.amount ??
     (isWinner && myRank ? quiz.prizeAmounts[myRank - 1] : undefined);
+  const payoutToken = quiz.payoutToken;
   const accuracy =
     myRow && myRow.answeredCount > 0
       ? `${Math.round((myRow.correctCount / myRow.answeredCount) * 100)}%`
@@ -1505,7 +1507,7 @@ function ResultsScreen({
     ? "Leaderboard is live"
     : isWinner
       ? winnerAmount
-        ? `You won $${formatPrize(winnerAmount)} USDT!`
+        ? `You won $${formatPrize(winnerAmount)} ${payoutToken}!`
         : `You finished ${ordinal(myRank!)}!`
       : myRank
         ? "Better luck next time"
@@ -1513,7 +1515,7 @@ function ResultsScreen({
   const subcopy = !isQuizEnded
     ? "You're done. Results lock when the timer hits zero."
     : isWinner
-      ? payoutResultCopy(viewerPayout)
+      ? payoutResultCopy(viewerPayout, payoutToken)
       : myRank
         ? `${ordinal(myRank)} of ${totalPlayers} players`
         : "Final scores are ready.";
@@ -1604,6 +1606,7 @@ function ResultsScreen({
                   payouts.find((p) => p.userId === r.userId)?.amount ??
                   quiz.prizeAmounts[i]
                 }
+                token={payoutToken}
                 avatarEmoji={r.avatarEmoji}
                 avatarColor={r.avatarColor}
               />
@@ -1641,7 +1644,7 @@ function ResultsScreen({
       </div>
 
       {isQuizEnded && isWinner && (
-        <PayoutResultCard payout={viewerPayout} amount={winnerAmount} />
+        <PayoutResultCard payout={viewerPayout} amount={winnerAmount} token={payoutToken} />
       )}
 
       <LeaderboardList
@@ -1675,7 +1678,7 @@ function ResultsScreen({
             }}
           >
             <div className="mq-h2" style={{ color: "white", fontSize: 22 }}>
-              {formatPrize(viewerPayout.amount)} USDT sent to your wallet
+              {formatPrize(viewerPayout.amount)} {payoutToken} sent to your wallet
             </div>
             <div
               style={{
@@ -1717,9 +1720,11 @@ function ResultsScreen({
 function PayoutResultCard({
   payout,
   amount,
+  token,
 }: {
   payout: PublicPayout | null | undefined;
   amount: string | undefined;
+  token: string;
 }) {
   const meta = payoutMeta(payout?.status ?? "PENDING");
   return (
@@ -1738,10 +1743,10 @@ function PayoutResultCard({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15 }}>
         <Icon name={meta.icon} size={16} color={meta.color} />
-        {amount ? `$${formatPrize(amount)} USDT` : "Prize payout"}
+        {amount ? `$${formatPrize(amount)} ${token}` : "Prize payout"}
       </div>
       <div style={{ marginTop: 4, fontSize: 12, opacity: 0.82 }}>
-        {payoutResultCopy(payout)}
+        {payoutResultCopy(payout, token)}
       </div>
     </div>
   );
@@ -1850,7 +1855,7 @@ function LeaderboardList({
                     color: "var(--ink)",
                   }}
                 >
-                  ${formatPrize(prizeAmount)}
+                  ${formatPrize(prizeAmount)} {quiz.payoutToken}
                 </div>
               )}
               {isPrizeRank && <PayoutBadge status={payout?.status ?? "PENDING"} />}
@@ -1895,11 +1900,11 @@ function formatShortCountdown(ms: number): string {
   return `${seconds}s`;
 }
 
-function payoutResultCopy(payout: PublicPayout | null | undefined): string {
+function payoutResultCopy(payout: PublicPayout | null | undefined, token = "USDT"): string {
   if (!payout) return "You won. Payout is being sent.";
   switch (payout.status) {
     case "CONFIRMED":
-      return "USDT sent to your wallet.";
+      return `${token} sent to your wallet.`;
     case "BROADCAST":
       return "You won. Payout is being finalized.";
     case "FAILED":
@@ -1962,6 +1967,7 @@ function PodiumStack({
   score,
   me,
   amount,
+  token,
   avatarEmoji,
   avatarColor,
 }: {
@@ -1970,6 +1976,7 @@ function PodiumStack({
   score: string;
   me: boolean;
   amount?: string;
+  token: string;
   avatarEmoji?: string | null;
   avatarColor?: string | null;
 }) {
@@ -2017,7 +2024,7 @@ function PodiumStack({
       >
         <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1 }}>{rank}</div>
         {amount && (
-          <div style={{ fontSize: 11, fontWeight: 900, marginTop: 4 }}>${formatPrize(amount)}</div>
+          <div style={{ fontSize: 11, fontWeight: 900, marginTop: 4 }}>${formatPrize(amount)} {token}</div>
         )}
       </div>
     </div>

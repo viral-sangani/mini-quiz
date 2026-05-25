@@ -131,8 +131,7 @@ mini-quiz/
   base64 -d`)
 - **Cluster**: `doctl kubernetes cluster kubeconfig save miniquiz-prod`
 - **Image registry**: `docker.io/viralsangani/miniquiz-api`
-- **Argo source repo**: `https://github.com/viral-sangani/mini-quiz` (public
-  mirror; canonical is `celo-org/mini-quiz` once PAT is approved)
+- **Argo source repo**: `https://github.com/celo-org/mini-quiz`
 - **Cloudflare DNS**: `api.miniquiz.club` → `142.93.184.188` (proxied)
 
 ## Asking the user

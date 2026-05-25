@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { AdminStats, PayoutStatus } from "@mini-quiz/shared";
+import type { AdminStats, PayoutStatus, PayoutTokenSymbol } from "@mini-quiz/shared";
 import { BLOCKSCOUT_TX } from "@mini-quiz/shared";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
@@ -21,6 +21,7 @@ type AdminPayoutRow = {
   quizId: string;
   quizTitle: string;
   quizCode: string;
+  payoutToken: PayoutTokenSymbol;
   rank: number;
   amount: string;
   tokenAddress: string;
@@ -319,6 +320,9 @@ export default function PayoutsPage() {
                       }}
                     >
                       ${p.amount}
+                      <span style={{ marginLeft: 4, fontSize: 11, color: "var(--a-ink-soft)" }}>
+                        {p.payoutToken}
+                      </span>
                     </td>
                     <td>
                       {p.txHash ? (

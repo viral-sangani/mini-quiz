@@ -10,7 +10,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/viral-sangani/mini-quiz
+    repoURL: https://github.com/celo-org/mini-quiz
     targetRevision: main
     path: deploy/apps
     directory:

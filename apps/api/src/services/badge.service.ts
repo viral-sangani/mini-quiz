@@ -1,4 +1,3 @@
-import { Prisma } from "../db.js";
 import { type BadgeId } from "@mini-quiz/shared";
 import { prisma } from "../db.js";
 import { fullLeaderboardRows } from "./room.service.js";
@@ -9,15 +8,11 @@ export async function awardBadge(
   userId: string,
   badgeId: BadgeId,
 ): Promise<boolean> {
-  try {
-    await prisma.userBadge.create({ data: { userId, badgeId } });
-    return true;
-  } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return false;
-    }
-    throw e;
-  }
+  const result = await prisma.userBadge.createMany({
+    data: [{ userId, badgeId }],
+    skipDuplicates: true,
+  });
+  return result.count > 0;
 }
 
 // Run when a quiz transitions LIVE → ENDED. Walks each player and awards any

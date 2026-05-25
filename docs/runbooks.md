@@ -30,17 +30,16 @@ kubectl get nodes
 99% of changes are: edit `apps/api/src/...` → push to `main` → wait.
 
 1. Edit the code.
-2. `git add . && git commit -m "..." && git push viral HEAD:main`
-3. (Optional) `git push origin HEAD:main` to mirror to celo-org repo.
-4. GitHub Actions builds + pushes the image, then bumps
+2. `git add . && git commit -m "..." && git push origin HEAD:main`
+3. GitHub Actions builds + pushes the image, then bumps
    `deploy/charts/api/values.yaml`'s `image.tag` and commits.
-5. Argo notices within ~30s, runs the PreSync migration Job, then
+4. Argo notices within ~30s, runs the PreSync migration Job, then
    rolls the api Deployment.
 
 Watch:
 
 ```bash
-gh run watch --repo viral-sangani/mini-quiz
+gh run watch --repo celo-org/mini-quiz
 # After workflow finishes:
 git pull viral main --ff-only
 kubectl -n api rollout status deploy/api
@@ -51,8 +50,8 @@ If something breaks: `docs/runbooks.md` → "Debug a failing Pod" below.
 ## Trigger a manual rebuild
 
 ```bash
-gh workflow run api-image.yml --ref main --repo viral-sangani/mini-quiz
-gh run watch --repo viral-sangani/mini-quiz
+gh workflow run api-image.yml --ref main --repo celo-org/mini-quiz
+gh run watch --repo celo-org/mini-quiz
 ```
 
 ## Apply a Prisma schema change
@@ -66,7 +65,7 @@ pnpm --filter @mini-quiz/api prisma migrate dev --name describe_change
 # 3. Verify migration SQL — `apps/api/prisma/migrations/<ts>_<name>/migration.sql`
 
 # 4. Commit + push
-git add apps/api/prisma/ && git commit -m "feat: <change>" && git push viral HEAD:main
+git add apps/api/prisma/ && git commit -m "feat: <change>" && git push origin HEAD:main
 
 # 5. CI builds new image. Argo's PreSync hook auto-runs `prisma migrate deploy`
 #    against the cluster Postgres. The api Pod won't roll until migrations succeed.
@@ -229,7 +228,7 @@ kubectl get nodes -o wide
 # postgres Secret" above), then push.
 
 # Trigger first image build (or wait for the next code push)
-gh workflow run api-image.yml --ref main --repo viral-sangani/mini-quiz
+gh workflow run api-image.yml --ref main --repo celo-org/mini-quiz
 
 # Verify
 curl https://api.miniquiz.club/health
@@ -284,30 +283,81 @@ argocd login localhost:8080 --username admin --password "$ARGO_PW" --insecure --
 argocd app sync <app-name> --force
 ```
 
-## Pre-warm live-event capacity before a scheduled game
+## Automatic live-game capacity prewarming
 
-The first scale-up takes ~3–5 min from cluster autoscaler cold-start.
-Don't wait until traffic arrives:
+The first DOKS scale-up can take a few minutes from a cold node pool. The
+`api-capacity-prewarmer` CronJob runs every minute and warms capacity
+automatically for paid live quizzes.
+
+Policy:
+- Idle default is one DOKS node minimum and one pod each for `api`,
+  `api-realtime`, and `api-score-worker`.
+- Warm mode starts 10 minutes before a paid live quiz starts.
+- Warm mode stays active while the quiz is `LIVE`.
+- Warm mode stays active until 10 minutes after the quiz ends.
+- If a scheduled quiz misses quorum and stays `SCHEDULED`, warm mode ends at
+  `scheduledStart + 10 minutes`.
+- Scheduler and payout workers stay exactly one pod.
+
+Warm mode patches:
+
+```text
+api                  minReplicas 2, maxReplicas 4
+api-realtime         minReplicas 2, maxReplicas 8
+api-score-worker     minReplicas 2, maxReplicas 8
+DOKS node pool main  auto_scale true, min_nodes 2, max_nodes 4
+```
+
+Idle mode patches the same HPAs back to `minReplicas: 1` and the node pool
+back to `min_nodes: 1,max_nodes: 4`.
+
+Check the CronJob and latest decision:
 
 ```bash
-# 30 min before a campaign-sized scheduled game
-kubectl -n api patch hpa api --type merge -p '{"spec":{"minReplicas":4,"maxReplicas":4}}'
-kubectl -n api patch hpa api-realtime --type merge -p '{"spec":{"minReplicas":4,"maxReplicas":8}}'
-kubectl -n api patch hpa api-score-worker --type merge -p '{"spec":{"minReplicas":4,"maxReplicas":8}}'
-kubectl -n api get pods -w     # confirm all warmed pods are ready
-
-# Right after the game (or 15 min after if testing)
-kubectl -n api patch hpa api --type merge -p '{"spec":{"minReplicas":2,"maxReplicas":4}}'
-kubectl -n api patch hpa api-realtime --type merge -p '{"spec":{"minReplicas":2,"maxReplicas":8}}'
-kubectl -n api patch hpa api-score-worker --type merge -p '{"spec":{"minReplicas":2,"maxReplicas":8}}'
+kubectl -n api get cronjob api-capacity-prewarmer
+kubectl -n api get jobs --sort-by=.metadata.creationTimestamp | tail
+kubectl -n api logs job/<latest-capacity-prewarmer-job>
+kubectl -n api get hpa api api-realtime api-score-worker
+kubectl -n api get pods -l app.kubernetes.io/component=capacity-prewarmer
 ```
+
+Run a local dry-run check without patching Kubernetes or DigitalOcean:
+
+```bash
+pnpm --filter @mini-quiz/api build
+CAPACITY_PREWARMER_DRY_RUN=true \
+DATABASE_URL="$DATABASE_URL" \
+NATS_URL="$NATS_URL" \
+pnpm --filter @mini-quiz/api start:capacity-prewarmer
+```
+
+For staging, set `capacityPrewarmer.dryRun=true` in the chart values before
+syncing. Do not enable dry-run in production during a real campaign window
+because it logs the intended changes without applying them.
+
+The DigitalOcean node-pool patch requires `DIGITALOCEAN_TOKEN` in the
+`api-secrets` SealedSecret. Do not commit the plaintext token. Add it to the
+local unsealed source, reseal with `kubeseal`, and commit only the encrypted
+SealedSecret. If the token is missing or the DigitalOcean API call fails, the
+CronJob still patches the HPAs and logs the node-pool failure.
+
+Safety checks:
+- If the Postgres quiz lookup fails, the job fails before patching anything.
+- If the desired decision is idle but NATS score-worker lag cannot be checked,
+  the job keeps warm capacity instead of downscaling.
+- HPA and node-pool patches are idempotent; already-correct resources are
+  logged as no-ops.
+
+OpenTofu still declares node pool `main` with `min_nodes = 1`. During live
+games the runtime value may drift to `min_nodes = 2`. Avoid running
+`tofu apply` during a game unless you intend to reset that runtime warmup.
 
 **Current state**: Phase 2 uses NATS JetStream for room events and accepted
 answers, a dedicated realtime gateway for SSE, score workers for async live
 score refreshes, one scheduler/finalizer worker for quiz transitions, one
-payout worker for prize transfers, Redis for hot live scores, and PgBouncer for
-app Postgres connections. Keep `deploy/api-worker` and
-`deploy/api-payout-worker` at exactly one replica.
+payout worker for prize transfers, Redis for hot live scores, PgBouncer for app
+Postgres connections, and one capacity prewarmer CronJob. Keep
+`deploy/api-worker` and `deploy/api-payout-worker` at exactly one replica.
 
 ## Phase 0 scalability checks
 

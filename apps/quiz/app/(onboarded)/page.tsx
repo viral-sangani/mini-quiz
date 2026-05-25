@@ -241,11 +241,11 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
   const lobbyOpen = phase === "lobby-open" || phase === "starting";
   const startMs = quiz.scheduledStart ? new Date(quiz.scheduledStart).getTime() : null;
   const lobbyOpenMs = startMs ? startMs - quiz.lobbyOpenLeadMs : null;
-  const totalUsdt = quiz.prizeAmounts.reduce(
+  const totalPool = quiz.prizeAmounts.reduce(
     (sum, a) => sum + Number(a || 0),
     0,
   );
-  const prizePoolLabel = formatTokenAmount(totalUsdt);
+  const prizePoolLabel = formatTokenAmount(totalPool);
   const grad = coverGradient(quiz.coverColor);
 
   // Banner copy depends on phase.
@@ -260,7 +260,7 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
             : `${quiz.playersNeeded} more needed to start`
           : phase === "pre-lobby" && lobbyOpenMs
             ? `Lobby opens in ${formatMsLabel(lobbyOpenMs - now)}`
-            : `Scheduled · $${prizePoolLabel} USDT pool`;
+            : `Scheduled · $${prizePoolLabel} ${quiz.payoutToken} pool`;
 
   const cta = isLive ? "JOIN LIVE" : lobbyOpen ? "JOIN NOW" : "VIEW";
 
@@ -326,7 +326,7 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
             {quiz.title}
           </div>
           <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.92, marginBottom: 12 }}>
-            ${prizePoolLabel} USDT pool · {quiz.playerCount}/{quiz.minParticipants} joined
+            ${prizePoolLabel} {quiz.payoutToken} pool · {quiz.playerCount}/{quiz.minParticipants} joined
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 10 }}>{subline}</div>
           <span
@@ -361,11 +361,11 @@ function UpNextRow({ quiz, now }: { quiz: PublicQuiz; now: number }) {
   });
   const startMs = quiz.scheduledStart ? new Date(quiz.scheduledStart).getTime() : null;
   const lobbyOpenMs = startMs ? startMs - quiz.lobbyOpenLeadMs : null;
-  const totalUsdt = quiz.prizeAmounts.reduce(
+  const totalPool = quiz.prizeAmounts.reduce(
     (sum, a) => sum + Number(a || 0),
     0,
   );
-  const prizePoolLabel = formatTokenAmount(totalUsdt);
+  const prizePoolLabel = formatTokenAmount(totalPool);
   const countdown =
     phase === "lobby-open" && startMs
       ? `Starts in ${formatMsLabel(startMs - now)}`
@@ -415,7 +415,7 @@ function UpNextRow({ quiz, now }: { quiz: PublicQuiz; now: number }) {
           </div>
           <div className="mq-body" style={{ fontSize: 12 }}>
             <span style={{ color: "var(--accent-shade)", fontWeight: 800 }}>
-              ${prizePoolLabel} USDT
+              ${prizePoolLabel} {quiz.payoutToken}
             </span>{" "}
             · {quiz.questionCount} questions
           </div>

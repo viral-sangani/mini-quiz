@@ -1,6 +1,6 @@
 # Deployment
 
-> Last updated: **2026-05-22** (Phase 2 NATS + realtime gateway).
+> Last updated: **2026-05-25** (automatic live-game capacity prewarmer).
 > Update triggers: cluster topology change, region change, new infra
 > resource, image registry move, CI workflow change.
 
@@ -10,12 +10,12 @@
 |---|---|---|
 | `apps/quiz` (Next.js) | Vercel project `mini-quiz`, root `apps/quiz` | Edge + free preview deploys. Pure FE, no DB access. |
 | `apps/admin` (Next.js) | Vercel project `mini-quiz-admin`, root `apps/admin` | Same. Auth via ADMIN_EMAILS allowlist (no DB on Vercel). |
-| `apps/api` (Fastify) | DOKS | REST API pods, realtime gateway pods, score workers, one scheduler worker, and one payout worker |
+| `apps/api` (Fastify) | DOKS | REST API pods, realtime gateway pods, score workers, one scheduler worker, one payout worker, and a capacity prewarmer CronJob |
 | Postgres (CNPG) | In-cluster (DOKS) | ~$50/mo cheaper than DO Managed at PoC scale |
 | Redis (Bitnami) | In-cluster (DOKS) | Same |
 | NATS JetStream | In-cluster (DOKS) | Durable live-event spine for Phase 2 |
 | Image registry | Docker Hub `viralsangani/miniquiz-api` (public) | celo-org GHCR is blocked pending PAT approval |
-| Argo source repo | `viral-sangani/mini-quiz` (public mirror) | celo-org repo private, PAT pending |
+| Argo source repo | `celo-org/mini-quiz` | Argo reads this private repo with a fine-grained read-only token |
 | TLS | Cloudflare edge + Let's Encrypt origin (HTTP-01) | Free + DDoS absorption |
 | DNS | Cloudflare proxied (orange cloud) | Free + fast |
 | Tofu state | Cloudflare R2 `s3://miniquiz-tfstate/infra.tfstate` | Free tier ($0/mo), s3-compatible |
@@ -27,14 +27,21 @@
 | Cluster name | `miniquiz-prod` |
 | Region | `nyc3` |
 | K8s version | `1.34.5-do.5` (auto-upgrade Sundays 04:00 UTC) |
-| Node pool | `main`, autoscale `1–4`, size `s-4vcpu-8gb` ($48/mo each) |
+| Node pool | `main`, autoscale `1-4`, size `s-4vcpu-8gb` ($48/mo each) |
 | Node public IP (current) | `142.93.184.188` |
 | Control plane | Single-AZ (free) |
 
 The node IP is stable as long as the node isn't replaced. If the
 autoscaler removes + recreates the node (e.g., during scale-down), the
-IP changes — **Cloudflare DNS A-record needs updating**. Long-term fix:
+IP changes - **Cloudflare DNS A-record needs updating**. Long-term fix:
 add a DO Load Balancer (+$12/mo) or use Cloudflare Tunnel.
+
+Default production shape is intentionally cheap: one node minimum and one pod
+each for the scalable services (`api`, `api-realtime`, `api-score-worker`).
+The scheduler and payout workers always stay at one pod. The
+`api-capacity-prewarmer` CronJob raises HPA minimums and the DOKS node pool
+minimum around paid live quizzes, then returns both to idle after the warm
+window.
 
 ## Two-layer ownership model
 
@@ -55,7 +62,7 @@ add a DO Load Balancer (+$12/mo) or use Cloudflare Tunnel.
 │  • ingress-nginx (hostNetwork)         │
 │  • CNPG operator + Postgres Cluster CR │
 │  • Bitnami Redis + NATS JetStream      │
-│  • api Helm chart + REST/realtime/workers/HPA │
+│  • api Helm chart + REST/realtime/workers/HPA/prewarmer │
 │  • migration Job (PreSync hook)        │
 └────────────────────────────────────────┘
 ```
@@ -88,6 +95,8 @@ deploy/
 │       ├── service.yaml
 │       ├── ingress.yaml
 │       ├── hpa.yaml
+│       ├── phase2-hpas.yaml
+│       ├── capacity-prewarmer-cronjob.yaml
 │       └── migration-job.yaml  # PreSync hook
 └── manifests/
     ├── postgres-cluster.yaml         # CNPG Cluster CR
@@ -112,7 +121,40 @@ deploy/
 | 3 | `postgres-cluster` | CNPG `Cluster` CR + PgBouncer Pooler |
 | 3 | `redis` | Bitnami legacy Redis 8.2.1 (standalone, AOF on) |
 | 3 | `nats` | NATS JetStream with a 10 GiB file-store PVC |
-| 4 | `api` | Fastify web, realtime gateway, scheduler worker, score worker, payout worker, migration/seed hooks |
+| 4 | `api` | Fastify web, realtime gateway, scheduler worker, score worker, payout worker, capacity prewarmer, migration/seed hooks |
+
+## API capacity profile
+
+Idle defaults in `deploy/charts/api/values.yaml`:
+
+| Component | Idle pods | Warm pods | Max pods |
+|---|---:|---:|---:|
+| `api` | 1 | 2 | 4 |
+| `api-realtime` | 1 | 2 | 8 |
+| `api-score-worker` | 1 | 2 | 8 |
+| `api-worker` | 1 | 1 | 1 |
+| `api-payout-worker` | 1 | 1 | 1 |
+
+The capacity prewarmer runs once per minute. For paid live quizzes it warms
+capacity from 10 minutes before scheduled start, keeps it warm while live, and
+returns to idle 10 minutes after the quiz ends. If a scheduled quiz misses
+quorum and stays `SCHEDULED`, warm capacity is kept only until
+`scheduledStart + 10 minutes`.
+
+Warm mode patches:
+
+- HPA minimums for `api`, `api-realtime`, and `api-score-worker` from `1` to
+  `2`.
+- DOKS node pool `main` autoscale settings from `min_nodes=1,max_nodes=4` to
+  `min_nodes=2,max_nodes=4`.
+
+Idle mode patches the same resources back to `min_nodes=1` and HPA
+`minReplicas=1`. Scheduler and payout workers are never scaled by the
+prewarmer.
+
+OpenTofu still declares the node pool default as `min_nodes = 1`. Runtime
+prewarming may temporarily drift the node pool minimum to `2`; avoid running
+`tofu apply` during a live game unless you intend to reset that runtime value.
 
 `sealed-secret-payloads` is in the same wave as `sealed-secrets` because
 the encrypted YAMLs reference the controller namespace; the controller
@@ -155,10 +197,9 @@ echo '{"projectId":"prj_Tq79B9zywjLVjdVeS1AUnk4YiUX5","orgId":"team_H2565VzmcSsg
 vercel --prod --yes      # admin
 ```
 
-`.vercel/` is gitignored. Both projects also auto-deploy on git push if
-linked to the GitHub repo (currently CLI-only since the repo lives at
-`celo-org/mini-quiz` + `viral-sangani/mini-quiz` and the Vercel git
-integration isn't wired up).
+`.vercel/` is gitignored. API deploys now come from `celo-org/mini-quiz`.
+The player/admin Vercel projects may still be connected to the Viral mirror
+until the Celo-owned Vercel setup is ready.
 
 ## CI: image build
 
@@ -172,13 +213,17 @@ integration isn't wired up).
 - Argo notices the tag bump within ~30s and rolls the api Deployment.
   PreSync hook runs Prisma migrations first.
 
-Required GitHub Actions secrets on the `viral-sangani/mini-quiz` repo:
+Required GitHub Actions secrets on the `celo-org/mini-quiz` repo:
 
 - `DOCKERHUB_USERNAME` — `viralsangani`
 - `DOCKERHUB_TOKEN` — `dckr_pat_...` (Read+Write)
 
 The default `GITHUB_TOKEN` covers the `git push` step (it has `contents:
 write` from the workflow's `permissions:` block).
+
+The workflow is guarded with `github.repository == 'celo-org/mini-quiz'` so
+the Viral mirror cannot accidentally build and bump the API chart after this
+change lands there.
 
 ## Secrets pipeline
 

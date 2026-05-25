@@ -2,12 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import { ProfileErrorScreen } from "@/components/ProfileErrorScreen";
 import { useProfile } from "@/lib/profile-context";
 
 // Onboarding shell. No tab bar; redirects out if the player already has a
 // complete profile (so /onboarding doesn't become a back-button trap).
 export default function OnboardingLayout({ children }: { children: ReactNode }) {
-  const { state } = useProfile();
+  const { state, refresh } = useProfile();
   const router = useRouter();
 
   useEffect(() => {
@@ -15,6 +16,15 @@ export default function OnboardingLayout({ children }: { children: ReactNode }) 
       router.replace("/");
     }
   }, [state, router]);
+
+  if (state.status === "profile-error") {
+    return (
+      <ProfileErrorScreen
+        message={state.message}
+        onRetry={() => void refresh()}
+      />
+    );
+  }
 
   return <main className="mq-screen" style={{ minHeight: "100dvh" }}>{children}</main>;
 }
