@@ -1,0 +1,24 @@
+{{- if and .Values.realtime.enabled .Values.realtime.hpa.enabled -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "api.fullname" . }}-realtime
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}-realtime
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "api.fullname" . }}-realtime
+  minReplicas: {{ .Values.realtime.hpa.minReplicas }}
+  maxReplicas: {{ .Values.realtime.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.realtime.hpa.targetCPUUtilizationPercentage }}
+{{- end }}
