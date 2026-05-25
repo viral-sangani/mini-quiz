@@ -29,7 +29,7 @@
 | Region | `nyc3` |
 | K8s version | `1.34.5-do.5` (auto-upgrade Sundays 04:00 UTC) |
 | Node pool | `main`, autoscale `1-4`, size `s-4vcpu-8gb` ($48/mo each) |
-| Ingress LoadBalancer IP | `kubectl -n ingress-nginx get svc ingress-nginx-controller` |
+| Ingress LoadBalancer IP (current) | `138.197.59.127` |
 | Control plane | Single-AZ (free) |
 
 Cloudflare DNS should point at the ingress-nginx `LoadBalancer` external
@@ -37,6 +37,12 @@ IP, not at an individual DOKS node IP. DOKS nodes may still be replaced
 or scaled down by the live-game prewarmer, but the Load Balancer remains
 the stable origin in front of whichever node(s) are currently serving
 ingress.
+
+To re-check the current value:
+
+```bash
+kubectl -n ingress-nginx get svc ingress-nginx-controller
+```
 
 Default production shape is intentionally cheap: one node minimum and one pod
 each for the scalable services (`api`, `api-realtime`, `api-score-worker`).
