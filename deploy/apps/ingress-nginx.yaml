@@ -17,13 +17,15 @@ spec:
       values: |
         controller:
           kind: DaemonSet
-          hostNetwork: true
-          dnsPolicy: ClusterFirstWithHostNet
+          hostNetwork: false
+          dnsPolicy: ClusterFirst
           service:
             enabled: true
-            type: ClusterIP
+            type: LoadBalancer
+            annotations:
+              service.beta.kubernetes.io/do-loadbalancer-name: miniquiz-prod-ingress
           publishService:
-            enabled: false
+            enabled: true
           config:
             use-forwarded-headers: "true"
             compute-full-forwarded-for: "true"

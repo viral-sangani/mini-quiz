@@ -86,28 +86,31 @@ mirror.
 
 ---
 
-### 4. Cloudflare in front, no DO Load Balancer
+### 4. Cloudflare in front of a DO Load Balancer
 
-**Context**: User asked if we can avoid the $12/mo DO Load Balancer.
+**Context**: We initially avoided the extra monthly Load Balancer cost by
+pointing Cloudflare directly at the single DOKS node IP. That broke when
+the node was replaced and the public node IP changed.
 
-**Decision**: ingress-nginx runs as a DaemonSet with `hostNetwork: true`
-on port 80/443. Cloudflare A-record points (proxied) at the worker
-node's public IP.
+**Decision**: ingress-nginx runs behind a Kubernetes `LoadBalancer`
+Service, which provisions a DigitalOcean Load Balancer named
+`miniquiz-prod-ingress`. Cloudflare A-record points (proxied) at the
+Load Balancer IP instead of at an individual worker node.
 
-**Why**: Saves $12/mo. Cloudflare adds DDoS protection + free TLS at
-the edge for free. Single-node cluster doesn't need an LB anyway.
+**Why**: The Load Balancer gives the API a stable origin while the DOKS
+node pool can still scale, drain, or replace nodes. This is worth the
+extra monthly cost now that the app is moving toward production use.
 
-**Alternatives considered**: DO Load Balancer ($12/mo, stable IP,
-auto-failover when adding nodes). Cloudflare Tunnel (no exposed IP at
-all, but more setup).
+**Alternatives considered**: Direct node IP behind Cloudflare (cheaper,
+but breaks whenever the node IP changes). Cloudflare Tunnel (no exposed
+origin IP, but more moving pieces to operate).
 
 **Consequences**:
-- Node IP is the public attack surface. Cloudflare proxy hides it from
-  most observers, but the IP is still in DO's space and discoverable.
-- When the autoscaler removes + recreates the node, the public IP
-  changes and DNS must be updated. This isn't automated yet.
-- ingress-nginx hostNetwork conflicts with anything else binding 80/443
-  on that node. Don't run a second ingress controller.
+- Additional DigitalOcean Load Balancer cost.
+- Cloudflare DNS no longer needs to change when DOKS worker node IPs
+  change.
+- ingress-nginx no longer needs `hostNetwork`; Kubernetes routes traffic
+  through the Load Balancer Service.
 
 ---
 

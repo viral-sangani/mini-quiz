@@ -1,6 +1,6 @@
 # Deployment
 
-> Last updated: **2026-05-25** (automatic live-game capacity prewarmer).
+> Last updated: **2026-05-25** (DigitalOcean Load Balancer entrypoint).
 > Update triggers: cluster topology change, region change, new infra
 > resource, image registry move, CI workflow change.
 
@@ -16,8 +16,9 @@
 | NATS JetStream | In-cluster (DOKS) | Durable live-event spine for Phase 2 |
 | Image registry | Docker Hub `viralsangani/miniquiz-api` (public) | celo-org GHCR is blocked pending PAT approval |
 | Argo source repo | `celo-org/mini-quiz` | Argo reads this private repo with a fine-grained read-only token |
-| TLS | Cloudflare edge + Let's Encrypt origin (HTTP-01) | Free + DDoS absorption |
-| DNS | Cloudflare proxied (orange cloud) | Free + fast |
+| Ingress | DigitalOcean Load Balancer -> ingress-nginx | Stable origin when DOKS nodes change |
+| TLS | Cloudflare edge + Let's Encrypt origin (HTTP-01) | Edge DDoS absorption + origin TLS |
+| DNS | Cloudflare proxied (orange cloud) to the DO Load Balancer IP | Stable public API entrypoint |
 | Tofu state | Cloudflare R2 `s3://miniquiz-tfstate/infra.tfstate` | Free tier ($0/mo), s3-compatible |
 
 ## Cluster facts
@@ -28,13 +29,14 @@
 | Region | `nyc3` |
 | K8s version | `1.34.5-do.5` (auto-upgrade Sundays 04:00 UTC) |
 | Node pool | `main`, autoscale `1-4`, size `s-4vcpu-8gb` ($48/mo each) |
-| Node public IP (current) | `142.93.184.188` |
+| Ingress LoadBalancer IP | `kubectl -n ingress-nginx get svc ingress-nginx-controller` |
 | Control plane | Single-AZ (free) |
 
-The node IP is stable as long as the node isn't replaced. If the
-autoscaler removes + recreates the node (e.g., during scale-down), the
-IP changes - **Cloudflare DNS A-record needs updating**. Long-term fix:
-add a DO Load Balancer (+$12/mo) or use Cloudflare Tunnel.
+Cloudflare DNS should point at the ingress-nginx `LoadBalancer` external
+IP, not at an individual DOKS node IP. DOKS nodes may still be replaced
+or scaled down by the live-game prewarmer, but the Load Balancer remains
+the stable origin in front of whichever node(s) are currently serving
+ingress.
 
 Default production shape is intentionally cheap: one node minimum and one pod
 each for the scalable services (`api`, `api-realtime`, `api-score-worker`).
@@ -59,7 +61,7 @@ window.
 │ Day-1+ — Argo CD (deploy/)             │
 │  • sealed-secrets controller           │
 │  • cert-manager + Let's Encrypt issuer │
-│  • ingress-nginx (hostNetwork)         │
+│  • ingress-nginx + DO Load Balancer    │
 │  • CNPG operator + Postgres Cluster CR │
 │  • Bitnami Redis + NATS JetStream      │
 │  • api Helm chart + REST/realtime/workers/HPA/prewarmer │

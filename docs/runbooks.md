@@ -219,9 +219,10 @@ tofu apply        # ~7-9 min: VPC + cluster + node + Argo CD bootstrap
 doctl kubernetes cluster kubeconfig save miniquiz-prod
 kubectl -n argocd get applications -w   # wait for Synced+Healthy
 
-# Get new node IP and update Cloudflare DNS A-record (api.miniquiz.club)
-kubectl get nodes -o wide
-# Then: dashboard → DNS → edit api A-record → new IP → save (proxied)
+# Get the ingress LoadBalancer IP and point Cloudflare at it.
+kubectl -n ingress-nginx get svc ingress-nginx-controller
+# Then: Cloudflare dashboard -> DNS -> edit api A-record -> LoadBalancer IP
+# -> save (proxied/orange cloud).
 
 # CNPG randomly generates miniquiz-pg-app password on bootstrap.
 # Mirror it into the api namespace (see "Mirror the CNPG-generated
