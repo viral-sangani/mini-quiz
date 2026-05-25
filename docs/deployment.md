@@ -123,7 +123,7 @@ deploy/
 | 0 | `sealed-secrets` | Bitnami Sealed Secrets controller |
 | 0 | `sealed-secret-payloads` | The encrypted Secret YAMLs from `deploy/manifests/sealed-secrets/` |
 | 1 | `cert-manager` | cert-manager + Let's Encrypt ClusterIssuer |
-| 1 | `ingress-nginx` | ingress-nginx (DaemonSet, hostNetwork) |
+| 1 | `ingress-nginx` | ingress-nginx DaemonSet behind a DO Load Balancer |
 | 1 | `metrics-server` | Kubernetes resource metrics for `kubectl top` + HPA |
 | 2 | `cnpg-operator` | CloudNativePG operator |
 | 3 | `postgres-cluster` | CNPG `Cluster` CR + PgBouncer Pooler |
@@ -300,7 +300,7 @@ of 10 GiB free tier), Docker Hub, Let's Encrypt, GitHub Actions
 - Postgres replica + dedicated node pool (+$300/mo)
 - Postgres backups to R2 (low cost, but PoC accepted no-backup risk)
 - Prometheus / Loki / Grafana
-- DO Load Balancer
+- Additional DO Load Balancers beyond the ingress entrypoint
 - Snapshots
 - REST API HPA above 4 replicas before Phase 2 load gates are rehearsed
 - Realtime or score-worker HPA above 8 replicas before load gates are rehearsed

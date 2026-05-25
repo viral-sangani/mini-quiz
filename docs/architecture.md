@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-25** (capacity prewarmer runtime).
+> Last updated: **2026-05-25** (DigitalOcean Load Balancer entrypoint).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -22,9 +22,11 @@
 │              https://api.miniquiz.club                         │
 │                  (Cloudflare proxy)                            │
 │                         ▼                                      │
+│              DigitalOcean Load Balancer                        │
+│                         ▼                                      │
 │ ┌──────────────────────────────────────────────────────┐      │
 │ │ DigitalOcean Kubernetes (DOKS, NYC3, 1-4 nodes)       │      │
-│ │  ingress-nginx (hostNetwork) ─► api / realtime Svc    │      │
+│ │  ingress-nginx ───────────────► api / realtime Svc    │      │
 │ │                                  ▲                    │      │
 │ │  ┌─────────────┐                  │                   │      │
 │ │  │ apps/api    │ ◄─ DATABASE_URL─┼─► PgBouncer       │      │
@@ -276,8 +278,8 @@ PVCs only.
 
 - **No Postgres replica.** Single instance. PoC tradeoff.
 - **No Prometheus / Loki / Grafana.** Logs via `kubectl logs`.
-- **No DO Load Balancer** ($12/mo saved). Cloudflare proxies → node IP
-  → ingress-nginx running with `hostNetwork: true`.
+- **One DO Load Balancer for ingress.** Cloudflare proxies to the stable
+  Load Balancer IP, then Kubernetes routes to ingress-nginx.
 - **No dedicated WebSocket gateway.** SSE stays the user-facing realtime
   transport until bidirectional client events are actually needed.
 - **No queue-based write-behind for Postgres answers yet.** The API still

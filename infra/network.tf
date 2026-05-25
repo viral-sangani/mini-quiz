@@ -5,7 +5,8 @@ resource "digitalocean_vpc" "miniquiz" {
 }
 
 # Firewall on the cluster's worker nodes.
-# Allows: 80/443 from anywhere (ingress-nginx hostNetwork)
+# Allows: 80/443 from anywhere for direct node diagnostics.
+# Public app traffic normally enters through the DO Load Balancer.
 #         all intra-VPC traffic (cluster pod-to-pod)
 # DOKS adds its own implicit rules for the control plane → kubelet path.
 resource "digitalocean_firewall" "nodes" {
