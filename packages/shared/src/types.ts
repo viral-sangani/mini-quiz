@@ -11,6 +11,7 @@ export type QuizStatus = "DRAFT" | "SCHEDULED" | "LIVE" | "ENDED" | "ARCHIVED";
 export type PayoutStatus =
   | "PENDING"
   | "APPROVED"
+  | "BROADCASTING"
   | "BROADCAST"
   | "CONFIRMED"
   | "FAILED";

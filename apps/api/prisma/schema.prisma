@@ -26,6 +26,9 @@ enum QuizStatus {
 enum PayoutStatus {
   PENDING
   APPROVED
+  // Atomically claimed for signing; sits between APPROVED and BROADCAST so a
+  // single signer can lock a payout before it hits the chain.
+  BROADCASTING
   BROADCAST
   CONFIRMED
   FAILED
@@ -218,6 +221,7 @@ model Quiz {
   createdBy User         @relation("QuizCreator", fields: [createdById], references: [id])
   questions Question[]
   players   RoomPlayer[]
+  answers   Answer[]
   payouts   Payout[]
   dailySnapshot DailyLeaderboardSnapshot?
 
@@ -266,6 +270,9 @@ model Answer {
   id           String   @id @default(cuid())
   roomPlayerId String
   questionId   String
+  // Denormalized from Question.quizId so per-quiz answer aggregations avoid a
+  // join/scan through Question. Kept in sync at write time.
+  quizId       String
   userId       String
   choiceId     String
   submittedAt  DateTime @default(now())
@@ -275,12 +282,15 @@ model Answer {
 
   roomPlayer RoomPlayer @relation(fields: [roomPlayerId], references: [id], onDelete: Cascade)
   question   Question   @relation(fields: [questionId], references: [id])
+  quiz       Quiz       @relation(fields: [quizId], references: [id], onDelete: Cascade)
   user       User       @relation(fields: [userId], references: [id])
 
   @@unique([roomPlayerId, questionId])
   @@index([questionId])
   @@index([userId, submittedAt])
   @@index([submittedAt, userId])
+  @@index([quizId, submittedAt])
+  @@index([submittedAt, userId, points])
 }
 
 model Payout {
