@@ -1,0 +1,14 @@
+{{- if .Values.priorityClasses.enabled }}
+# Cluster-scoped PriorityClass for the singleton scheduler + payout workers.
+# Keeps these control-plane critical singletons from being preempted by
+# burstable stateless pods (web/realtime/score) when a node is under pressure.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ include "api.fullname" . }}-critical-worker
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+value: {{ .Values.priorityClasses.criticalWorkerValue }}
+globalDefault: false
+description: "Singleton scheduler/payout workers for mini-quiz; should not be preempted."
+{{- end }}

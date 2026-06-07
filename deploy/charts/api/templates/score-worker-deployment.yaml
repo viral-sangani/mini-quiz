@@ -59,6 +59,18 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.secretRefs.appSecret }}
+          {{- if .Values.scoreWorker.livenessProbe.enabled }}
+          # No HTTP server in this worker; confirm the node process is alive.
+          # TODO: switch to a heartbeat-file freshness check once the worker
+          # touches a file each loop iteration.
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "dist/score-worker.js"]
+            initialDelaySeconds: {{ .Values.scoreWorker.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.scoreWorker.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.scoreWorker.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.scoreWorker.livenessProbe.failureThreshold }}
+          {{- end }}
           resources:
             {{- toYaml .Values.scoreWorker.resources | nindent 12 }}
 {{- end }}

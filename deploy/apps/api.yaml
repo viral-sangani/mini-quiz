@@ -19,3 +19,13 @@ spec:
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
+  # The capacity prewarmer CronJob patches HPA minReplicas/maxReplicas at
+  # runtime to warm capacity ahead of scheduled games. Without this,
+  # selfHeal reverts those patches within a reconcile loop. Ignore the
+  # autoscaler-owned fields so Argo leaves prewarmer patches in place.
+  ignoreDifferences:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas
+        - /spec/maxReplicas

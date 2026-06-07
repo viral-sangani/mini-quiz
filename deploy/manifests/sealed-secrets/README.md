@@ -61,6 +61,37 @@ kubeseal --format yaml --cert /tmp/sealed-secrets.pub \
 rm /tmp/redis-auth.yaml
 ```
 
+## Generate the miniquiz-pg-r2 Secret (Postgres backups to Cloudflare R2)
+
+CNPG ships WAL + base backups to an R2 bucket (`s3://miniquiz-pg-backups/`).
+The `barmanObjectStore` block in `postgres-cluster.yaml` references
+`Secret/miniquiz-pg-r2` in the `data` namespace. Create an R2 API token
+(Object Read & Write on the bucket), then seal it:
+
+```bash
+cat <<'EOF' > /tmp/miniquiz-pg-r2.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: miniquiz-pg-r2
+  namespace: data
+type: Opaque
+stringData:
+  ACCESS_KEY_ID: "<R2_ACCESS_KEY_ID>"
+  ACCESS_SECRET_KEY: "<R2_SECRET_ACCESS_KEY>"
+EOF
+
+kubeseal --format yaml --cert /tmp/sealed-secrets.pub \
+  < /tmp/miniquiz-pg-r2.yaml \
+  > deploy/manifests/sealed-secrets/miniquiz-pg-r2.yaml
+
+rm /tmp/miniquiz-pg-r2.yaml
+```
+
+Also set the real R2 account endpoint in `postgres-cluster.yaml`
+(`endpointURL: https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`) and create
+the `miniquiz-pg-backups` bucket in the R2 dashboard before the first backup.
+
 ## DATABASE_URL composition
 
 CNPG auto-generates `Secret/miniquiz-pg-app` in the `data` namespace with

@@ -19,6 +19,9 @@ spec:
         app.kubernetes.io/name: {{ .Chart.Name }}
         app.kubernetes.io/instance: {{ .Release.Name }}-payout-worker
     spec:
+      {{- if .Values.priorityClasses.enabled }}
+      priorityClassName: {{ include "api.fullname" . }}-critical-worker
+      {{- end }}
       {{- if .Values.imagePullSecret }}
       imagePullSecrets:
         - name: {{ .Values.imagePullSecret }}
@@ -59,6 +62,18 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.secretRefs.appSecret }}
+          {{- if .Values.payoutWorker.livenessProbe.enabled }}
+          # No HTTP server in this worker; confirm the node process is alive.
+          # TODO: switch to a heartbeat-file freshness check once the worker
+          # touches a file each loop iteration.
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "dist/payout-worker.js"]
+            initialDelaySeconds: {{ .Values.payoutWorker.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.payoutWorker.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.payoutWorker.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.payoutWorker.livenessProbe.failureThreshold }}
+          {{- end }}
           resources:
             {{- toYaml .Values.payoutWorker.resources | nindent 12 }}
 {{- end }}

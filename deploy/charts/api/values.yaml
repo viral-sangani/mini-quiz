@@ -8,9 +8,36 @@ imagePullSecret: ""
 
 replicaCount: 1
 
+# Cluster-scoped PriorityClasses for the singleton control-plane workers
+# (scheduler + payout). Higher priority keeps them from being preempted by
+# burstable web/realtime/score pods during node pressure. Disabled by default
+# is not an option here — these are control-plane critical — but the values
+# are exposed so the numbers stay reviewable.
+priorityClasses:
+  enabled: true
+  # Above default (0), below DO/system-cluster-critical. Singletons that must
+  # not be evicted to schedule a scaled-up stateless pod.
+  criticalWorkerValue: 100000
+
 worker:
   enabled: true
   replicaCount: 1
+  # Liveness only. Workers run no HTTP server, so we cannot use httpGet.
+  # An exec probe confirms the node process is alive (catches a hung/zombied
+  # container that the kubelet would otherwise leave running). A true
+  # work-progress heartbeat would require a one-line app change to touch a
+  # heartbeat file each loop; see notes / TODO below.
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # Singleton scheduler/finalizer. maxUnavailable: 0 blocks voluntary eviction
+  # (node drain) until a replacement is healthy, protecting the single replica.
+  pdb:
+    enabled: true
+    maxUnavailable: 0
   resources:
     requests:
       cpu: 100m
@@ -39,6 +66,12 @@ realtime:
 scoreWorker:
   enabled: true
   replicaCount: 1
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
   hpa:
     enabled: true
     minReplicas: 1
@@ -54,6 +87,16 @@ scoreWorker:
 payoutWorker:
   enabled: true
   replicaCount: 1
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # Singleton payout worker. Same rationale as the scheduler worker.
+  pdb:
+    enabled: true
+    maxUnavailable: 0
   resources:
     requests:
       cpu: 100m

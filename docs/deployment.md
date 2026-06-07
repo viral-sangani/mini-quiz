@@ -290,15 +290,20 @@ sealed secret").
 | Block storage (~35 GiB) | ~$3.50 |
 | **Total** | **~$51.50/mo** |
 
-Free: Cloudflare DNS+proxy+TLS, Cloudflare R2 (Tofu state, ~18 KiB out
-of 10 GiB free tier), Docker Hub, Let's Encrypt, GitHub Actions
-(public repo).
+Free: Cloudflare DNS+proxy+TLS, Cloudflare R2 (Tofu state + Postgres
+WAL/base backups, well within the 10 GiB free tier), Docker Hub, Let's
+Encrypt, GitHub Actions (public repo).
+
+Postgres backups: CNPG ships WAL + a daily base backup to Cloudflare R2
+(`s3://miniquiz-pg-backups/`) with a 14-day retention. The cluster stays
+single-instance (no replica) for budget; backups are the only durability
+guarantee, so do not skip creating `Secret/miniquiz-pg-r2` (see
+`deploy/manifests/sealed-secrets/README.md`).
 
 ## Out of scope (do not add without asking)
 
 - HA control plane (+$40/mo)
 - Postgres replica + dedicated node pool (+$300/mo)
-- Postgres backups to R2 (low cost, but PoC accepted no-backup risk)
 - Prometheus / Loki / Grafana
 - Additional DO Load Balancers beyond the ingress entrypoint
 - Snapshots

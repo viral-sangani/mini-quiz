@@ -32,8 +32,42 @@ spec:
       work_mem: "8MB"
       effective_cache_size: "1GB"
 
-  # No backup block — PoC. Add `backup.barmanObjectStore` here later
-  # to ship WAL to Cloudflare R2.
+  # WAL archiving + base backups ship to Cloudflare R2 (S3-compatible).
+  # R2 storage/egress for a single-instance PoC is effectively ~$0.
+  # Credentials live in Secret/miniquiz-pg-r2 (data namespace), created via
+  # kubeseal — see deploy/manifests/sealed-secrets/README.md. The Secret holds
+  # ACCESS_KEY_ID and ACCESS_SECRET_KEY keys (R2 access key + secret).
+  backup:
+    # Keep 14 days of base backups + their WAL; CNPG prunes older ones.
+    retentionPolicy: "14d"
+    barmanObjectStore:
+      # R2 bucket; endpoint uses the account-scoped R2 S3 API URL.
+      destinationPath: "s3://miniquiz-pg-backups/"
+      endpointURL: "https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: miniquiz-pg-r2
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: miniquiz-pg-r2
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: miniquiz-pg-daily
+  namespace: data
+spec:
+  # Daily base backup at 02:30 UTC. CNPG cron format includes a seconds field.
+  schedule: "0 30 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: miniquiz-pg
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Pooler

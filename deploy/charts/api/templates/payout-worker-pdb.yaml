@@ -1,0 +1,19 @@
+{{- if and .Values.payoutWorker.enabled .Values.payoutWorker.pdb.enabled }}
+# PDB for the singleton payout worker. maxUnavailable: 0 — same rationale as the
+# scheduler worker PDB: protect the single replica during voluntary disruptions
+# without permanently blocking node drains.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "api.fullname" . }}-payout-worker
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}-payout-worker
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  maxUnavailable: {{ .Values.payoutWorker.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}-payout-worker
+{{- end }}
