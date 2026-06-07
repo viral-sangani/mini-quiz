@@ -24,6 +24,27 @@ let connectPromise: Promise<NatsConnection | null> | null = null;
 let streamsReady = false;
 let warnedUnavailable = false;
 
+// Observers notified when a live NATS connection is lost (closed/errored).
+// The SSE broker uses this to bring up its Redis fallback so cross-pod fanout
+// keeps working during a mid-run NATS outage.
+type ConnectionLostListener = () => void;
+const connectionLostListeners = new Set<ConnectionLostListener>();
+
+export function onNatsConnectionLost(listener: ConnectionLostListener): () => void {
+  connectionLostListeners.add(listener);
+  return () => connectionLostListeners.delete(listener);
+}
+
+function notifyConnectionLost(): void {
+  for (const listener of connectionLostListeners) {
+    try {
+      listener();
+    } catch {
+      // a misbehaving listener must not break connection teardown
+    }
+  }
+}
+
 export type AcceptedAnswerEvent = {
   version: 1;
   quizId: string;
@@ -73,6 +94,7 @@ async function getConnection(log?: FastifyBaseLogger): Promise<NatsConnection | 
           nc = null;
           streamsReady = false;
           connectPromise = null;
+          notifyConnectionLost();
         });
         return connection;
       })
