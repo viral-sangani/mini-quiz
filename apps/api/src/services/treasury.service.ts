@@ -15,9 +15,22 @@ import {
   type PayoutTokenSymbol,
   getPayoutToken,
 } from "@mini-quiz/shared";
+import pino from "pino";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
-import { ERC20_TRANSFER_ABI, treasuryAccount } from "./payout.service.js";
+import {
+  ERC20_TRANSFER_ABI,
+  sendTreasuryTransaction,
+  treasuryAccount,
+} from "./payout.service.js";
+import {
+  classifySendError,
+  releaseIdempotencyKey,
+  reserveIdempotencyKey,
+  withTreasuryLock,
+} from "./treasury-lock.js";
+
+const log = pino({ level: config.LOG_LEVEL });
 
 // Local public client. Recreating instead of importing from
 // payout.service.ts because viem's inferred return type from
@@ -36,14 +49,18 @@ const celoPublicClient = createPublicClient({
 //                                deposit-watcher poll loop doesn't melt
 //                                Forno during a deposit wait.
 // `getLockedObligations`      — sum `prizeAmounts` of SCHEDULED+LIVE quizzes
-//                                grouped by payoutToken, plus pending
-//                                payouts (PENDING/APPROVED/BROADCAST) by
-//                                their stored tokenAddress.
+//                                grouped by payoutToken, plus uncovered prize
+//                                ranks of ENDED quizzes whose payout rows
+//                                aren't created yet (worker lag), plus pending
+//                                payouts (PENDING/APPROVED/BROADCASTING/
+//                                BROADCAST) by their stored tokenAddress.
 // `getTreasurySummary`        — combines balances + locked + available.
-// `withdrawFromTreasury`      — admin manual withdrawal. Re-checks
-//                                available before sending so a race can't
-//                                drain the locked portion. Single in-flight
-//                                lock per token to block double-clicks.
+// `withdrawFromTreasury`      — admin manual withdrawal. Acquires a cross-pod
+//                                Redis lock on the treasury address (shared
+//                                with payout sends), re-checks available
+//                                INSIDE the lock so a race can't drain the
+//                                locked portion, and honours an optional
+//                                client idempotency key (Redis record).
 
 // ---------- Address ----------
 
@@ -159,11 +176,50 @@ export async function getLockedObligations(opts?: {
     out[sym] = sumDecimalStrings(byToken[sym]);
   }
 
+  // 1b. ENDED quizzes whose Payout rows haven't been created yet (scheduler /
+  //     finalizer worker lag). The prize money is still owed but lives in
+  //     neither the SCHEDULED/LIVE sum above nor the payout-row sum below, so
+  //     it would otherwise look "available" and a withdrawal could drain it.
+  //     Only lock the prize ranks that do NOT yet have a payout row — ranks
+  //     with a row are accounted for in step 2 (or already settled).
+  const endedQuizzes = await prisma.quiz.findMany({
+    where: {
+      status: "ENDED",
+      archivedAt: null,
+      ...(opts?.excludeQuizId ? { NOT: { id: opts.excludeQuizId } } : {}),
+    },
+    select: {
+      payoutToken: true,
+      prizeAmounts: true,
+      payouts: { select: { rank: true, status: true } },
+    },
+  });
+  for (const q of endedQuizzes) {
+    // M7: a FAILED payout row does NOT cover its rank. The prize is still owed
+    // and retryable, but FAILED is excluded from the in-flight sum in step 2,
+    // so without this the rank would be counted nowhere and show as available
+    // (then withdrawable). Treat only non-FAILED rows as covering a rank; a
+    // FAILED-only rank falls through to the prizeAmounts "uncovered" sum here.
+    // CONFIRMED ranks intentionally still count as covered (already settled,
+    // genuinely not owed). No double count: a rank is either covered (skipped
+    // here, summed in step 2 if in-flight) or uncovered (summed here).
+    const coveredRanks = new Set(
+      q.payouts.filter((p) => p.status !== "FAILED").map((p) => p.rank),
+    );
+    const uncovered: string[] = [];
+    for (let i = 0; i < q.prizeAmounts.length; i++) {
+      // Ranks are 1-based; prizeAmounts[i] is the prize for rank i + 1.
+      const amount = q.prizeAmounts[i];
+      if (amount && !coveredRanks.has(i + 1)) uncovered.push(amount);
+    }
+    out[q.payoutToken] = sumDecimalStrings([out[q.payoutToken], ...uncovered]);
+  }
+
   // 2. Add in-flight payouts not yet on-chain. CONFIRMED has already
-  //    settled; FAILED is unlocked. The middle three are still our
-  //    obligations.
+  //    settled; FAILED is unlocked. The remaining in-flight states are still
+  //    our obligations.
   const pendingPayouts = await prisma.payout.findMany({
-    where: { status: { in: ["PENDING", "APPROVED", "BROADCAST"] } },
+    where: { status: { in: ["PENDING", "APPROVED", "BROADCASTING", "BROADCAST"] } },
     select: { tokenAddress: true, amount: true },
   });
   for (const p of pendingPayouts) {
@@ -222,8 +278,6 @@ export async function getTreasurySummary(opts?: {
 
 // ---------- Withdraw ----------
 
-const inFlight = new Set<PayoutTokenSymbol>();
-
 export type WithdrawResult =
   | { ok: true; txHash: Hex }
   | { ok: false; code: WithdrawErrorCode; message: string };
@@ -234,6 +288,7 @@ export type WithdrawErrorCode =
   | "BAD_TARGET"
   | "INVALID_AMOUNT"
   | "INSUFFICIENT_AVAILABLE"
+  | "DUPLICATE"
   | "IN_FLIGHT"
   | "RPC_ERROR";
 
@@ -241,6 +296,12 @@ export async function withdrawFromTreasury(args: {
   tokenSymbol: PayoutTokenSymbol;
   amount: string;
   toAddress: string;
+  // Optional client-supplied idempotency key. When present, a repeat request
+  // with the same key is rejected (DUPLICATE) so a retried HTTP call can't
+  // send twice. Optional for now to stay backward-compatible with the existing
+  // route; see follow-up note about making it required + a durable Withdrawal
+  // table.
+  idempotencyKey?: string;
 }): Promise<WithdrawResult> {
   const token = (() => {
     try {
@@ -275,69 +336,114 @@ export async function withdrawFromTreasury(args: {
     };
   }
 
-  if (inFlight.has(token.symbol)) {
-    return {
-      ok: false,
-      code: "IN_FLIGHT",
-      message: "Another withdrawal for this token is in flight",
-    };
-  }
-  inFlight.add(token.symbol);
-  try {
-    // Race-safe re-check: pull a fresh balance + locked just before send.
-    const summary = await getTreasurySummary({ refresh: true });
-    const av = Number(summary.available[token.symbol]);
-    if (!Number.isFinite(av) || av < amountNum) {
-      return {
-        ok: false,
-        code: "INSUFFICIENT_AVAILABLE",
-        message: `Available ${token.symbol}: ${av}; requested ${amountNum}. (${summary.locked[token.symbol]} locked in active quizzes.)`,
-      };
-    }
+  const account = treasuryAccount();
+  const treasuryAddr = account.address;
 
-    const account = treasuryAccount();
-    const walletClient = createWalletClient({
-      account,
-      chain: celo,
-      transport: http(config.CELO_RPC_URL),
-    });
+  // Cross-pod critical section: a shared Redis lock keyed on the treasury
+  // address serializes ALL treasury sends across every pod (withdrawals and
+  // payouts share one key via withTreasuryLock). If Redis is down it falls
+  // back to the in-process mutex and logs a warning.
+  return withTreasuryLock(
+    treasuryAddr,
+    async (): Promise<WithdrawResult> => {
+      // Race-safe re-check INSIDE the lock: pull a fresh balance + locked just
+      // before send so a concurrent payout/withdrawal can't let us drain the
+      // locked portion. M5: validate BEFORE reserving the idempotency key so a
+      // rejected validation never burns the key for 24h.
+      const summary = await getTreasurySummary({ refresh: true });
+      const av = Number(summary.available[token.symbol]);
+      if (!Number.isFinite(av) || av < amountNum) {
+        return {
+          ok: false,
+          code: "INSUFFICIENT_AVAILABLE",
+          message: `Available ${token.symbol}: ${av}; requested ${amountNum}. (${summary.locked[token.symbol]} locked in active quizzes.)`,
+        };
+      }
+      if (!token.isNative && !token.address) {
+        return {
+          ok: false,
+          code: "INVALID_TOKEN",
+          message: "Token has no contract address",
+        };
+      }
 
-    let txHash: Hex;
-    if (token.isNative) {
-      // Native CELO transfer: gas paid in CELO, no feeCurrency override.
-      txHash = await walletClient.sendTransaction({
-        to: args.toAddress as Address,
-        value: parseUnits(args.amount, token.decimals),
-      } as Parameters<typeof walletClient.sendTransaction>[0]);
-    } else if (token.address) {
-      // ERC-20 withdrawals also use CELO for gas. This lets admins withdraw
-      // an exact stablecoin amount without the fee reducing that token first.
-      const data = encodeFunctionData({
-        abi: ERC20_TRANSFER_ABI,
-        functionName: "transfer",
-        args: [args.toAddress as Address, parseUnits(args.amount, token.decimals)],
+      // Idempotency: reserve only now that validation has passed. Checked INSIDE
+      // the lock so two concurrent identical requests can't both pass. Redis
+      // record with a 24h TTL — a durable Withdrawal table is the proper
+      // follow-up (schema is frozen for this group), which would also give
+      // permanent audit history.
+      if (args.idempotencyKey) {
+        const fresh = await reserveIdempotencyKey(
+          "withdraw",
+          args.idempotencyKey,
+          log,
+        );
+        if (!fresh) {
+          return {
+            ok: false,
+            code: "DUPLICATE",
+            message: "A withdrawal with this idempotency key was already accepted",
+          };
+        }
+      }
+
+      const walletClient = createWalletClient({
+        account,
+        chain: celo,
+        transport: http(config.CELO_RPC_URL),
       });
-      txHash = await walletClient.sendTransaction({
-        to: token.address,
-        data,
-      } as Parameters<typeof walletClient.sendTransaction>[0]);
-    } else {
-      return {
-        ok: false,
-        code: "INVALID_TOKEN",
-        message: "Token has no contract address",
-      };
-    }
-    // Bust the cache so the post-withdraw refresh shows the new balance.
-    balanceCache = null;
-    return { ok: true, txHash };
-  } catch (e) {
-    return {
-      ok: false,
-      code: "RPC_ERROR",
-      message: e instanceof Error ? e.message : "Chain transfer failed",
-    };
-  } finally {
-    inFlight.delete(token.symbol);
-  }
+
+      try {
+        // M6: route the send through the SAME explicit-nonce path payouts use,
+        // so the per-pod nonce cache stays authoritative. A bare
+        // walletClient.sendTransaction here would let viem pick a pending nonce
+        // independently and collide with a payout sent moments earlier from the
+        // same pod. We already hold withTreasuryLock, which is the contract
+        // sendTreasuryTransaction requires.
+        const txHash: Hex = await sendTreasuryTransaction(
+          walletClient,
+          treasuryAddr,
+          () => {
+            if (token.isNative) {
+              // Native CELO transfer: gas paid in CELO, no feeCurrency override.
+              return {
+                to: args.toAddress as Address,
+                value: parseUnits(args.amount, token.decimals),
+              };
+            }
+            // ERC-20 withdrawals also use CELO for gas. This lets admins
+            // withdraw an exact stablecoin amount without the fee reducing that
+            // token first. token.address is non-null here (validated above).
+            const data = encodeFunctionData({
+              abi: ERC20_TRANSFER_ABI,
+              functionName: "transfer",
+              args: [
+                args.toAddress as Address,
+                parseUnits(args.amount, token.decimals),
+              ],
+            });
+            return { to: token.address as Address, data };
+          },
+        );
+        // Bust the cache so the post-withdraw refresh shows the new balance.
+        balanceCache = null;
+        return { ok: true, txHash };
+      } catch (e) {
+        // M5: only release the idempotency key when the tx DEFINITIVELY never
+        // broadcast (pre-broadcast RPC rejection) so a legitimate retry isn't
+        // blocked for 24h. On an AMBIGUOUS failure the tx may be in the mempool
+        // — keep the key reserved so a retry stays deduped (we must not risk a
+        // second withdrawal).
+        if (args.idempotencyKey && classifySendError(e) === "PRE_BROADCAST") {
+          await releaseIdempotencyKey("withdraw", args.idempotencyKey);
+        }
+        return {
+          ok: false,
+          code: "RPC_ERROR",
+          message: e instanceof Error ? e.message : "Chain transfer failed",
+        };
+      }
+    },
+    log,
+  );
 }

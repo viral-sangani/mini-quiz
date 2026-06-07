@@ -27,6 +27,7 @@ const QUIZ_VARIANT: Record<QuizStatus, Variant> = {
 const PAYOUT_VARIANT: Record<PayoutStatus, Variant> = {
   PENDING: "pending",
   APPROVED: "approved",
+  BROADCASTING: "processing",
   BROADCAST: "broadcast",
   CONFIRMED: "paid",
   FAILED: "failed",
