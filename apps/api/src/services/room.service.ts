@@ -246,6 +246,7 @@ export async function submitAnswer(
         data: {
           roomPlayerId: roomPlayer.id,
           questionId: question.id,
+          quizId: quiz.id,
           userId: roomPlayer.userId,
           choiceId: input.choiceId,
           timeTakenMs,
@@ -321,8 +322,10 @@ export async function getLiveState(
   if (!quiz) return null;
 
   const totalQuestions = quiz.questions.length;
+  // Filter by the Answer.quizId column directly so this hits
+  // @@index([quizId, submittedAt]) instead of joining through Question.
   const lastAnswer = await prisma.answer.findFirst({
-    where: { question: { quizId } },
+    where: { quizId },
     orderBy: { submittedAt: "desc" },
     include: { question: true },
   });
@@ -339,15 +342,17 @@ export async function getLiveState(
 
   const answeredCount = distribution.reduce((a, b) => a + b.count, 0);
 
-  // Rough avg-correct % over all answers in this quiz so far.
-  const allAnswers = await prisma.answer.findMany({
-    where: { question: { quizId } },
-    select: { isCorrect: true },
-  });
+  // Rough avg-correct % over all answers in this quiz so far. Aggregate in the
+  // DB via the Answer.quizId column (no relation join, hits
+  // @@index([quizId, submittedAt])) instead of materializing every row in Node.
+  const [totalAnswers, correctAnswers] = await Promise.all([
+    prisma.answer.count({ where: { quizId } }),
+    prisma.answer.count({ where: { quizId, isCorrect: true } }),
+  ]);
   const avgCorrectPct =
-    allAnswers.length === 0
+    totalAnswers === 0
       ? 0
-      : Math.round((allAnswers.filter((a) => a.isCorrect).length / allAnswers.length) * 100);
+      : Math.round((correctAnswers / totalAnswers) * 100);
 
   const secondsRemaining =
     quiz.status === "LIVE" && quiz.endedAt

@@ -78,8 +78,10 @@ export async function getAdminStats(): Promise<AdminStats> {
   if (live) {
     // Current question position = highest answered question position so far + 1,
     // capped at totalQuestions. If no answer yet, we're on Q1.
+    // Filter by the Answer.quizId column directly so this hits
+    // @@index([quizId, submittedAt]) instead of joining through Question.
     const lastAnswer = await prisma.answer.findFirst({
-      where: { question: { quizId: live.id } },
+      where: { quizId: live.id },
       orderBy: { submittedAt: "desc" },
       include: { question: { select: { position: true } } },
     });

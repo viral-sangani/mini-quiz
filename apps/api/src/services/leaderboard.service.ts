@@ -41,6 +41,82 @@ export async function globalLeaderboard(
   period: GlobalLeaderboardPeriod,
   viewerUserId?: string | null,
 ): Promise<{ rows: GlobalLeaderboardRow[]; viewer: GlobalLeaderboardRow | null }> {
+  if (period === "all") {
+    return allTimeLeaderboard(viewerUserId);
+  }
+  return periodicLeaderboard(period, viewerUserId);
+}
+
+// All-time board reads the precomputed lifetime points off User.totalXp
+// instead of aggregating the whole Answer table. totalXp is incremented in
+// the same transaction as each LIVE answer (see submitAnswer in
+// room.service.ts) and deliberately excludes daily answers, so the all-time
+// board mirrors that lifetime-LIVE-points pool.
+async function allTimeLeaderboard(
+  viewerUserId?: string | null,
+): Promise<{ rows: GlobalLeaderboardRow[]; viewer: GlobalLeaderboardRow | null }> {
+  const top = await prisma.user.findMany({
+    where: { deletedAt: null },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      avatarEmoji: true,
+      avatarColor: true,
+      totalXp: true,
+    },
+    orderBy: { totalXp: "desc" },
+    take: TOP_N,
+  });
+
+  const rows: GlobalLeaderboardRow[] = top.map((u, i) => ({
+    rank: i + 1,
+    user: publicUser(u),
+    points: u.totalXp,
+    level: computeLevel(u.totalXp).level,
+  }));
+
+  let viewer: GlobalLeaderboardRow | null = null;
+  if (viewerUserId) {
+    const inTop = rows.find((r) => r.user.id === viewerUserId);
+    if (inTop) {
+      viewer = inTop;
+    } else {
+      const me = await prisma.user.findFirst({
+        where: { id: viewerUserId, deletedAt: null },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatarEmoji: true,
+          avatarColor: true,
+          totalXp: true,
+        },
+      });
+      if (me) {
+        // Rank = 1 + (# of non-deleted users with strictly more totalXp).
+        const ahead = await prisma.user.count({
+          where: { deletedAt: null, totalXp: { gt: me.totalXp } },
+        });
+        viewer = {
+          rank: ahead + 1,
+          user: publicUser(me),
+          points: me.totalXp,
+          level: computeLevel(me.totalXp).level,
+        };
+      }
+    }
+  }
+
+  return { rows, viewer };
+}
+
+// Periodic boards (today/week) aggregate Answer filtered by submittedAt so
+// they hit the covering @@index([submittedAt, userId, points]).
+async function periodicLeaderboard(
+  period: GlobalLeaderboardPeriod,
+  viewerUserId?: string | null,
+): Promise<{ rows: GlobalLeaderboardRow[]; viewer: GlobalLeaderboardRow | null }> {
   const start = startOfPeriod(period);
 
   // Aggregate sum(points) per userId in the period. Filter out answers

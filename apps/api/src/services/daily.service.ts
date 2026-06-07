@@ -287,6 +287,7 @@ export async function submitDailyAnswer(
       data: {
         roomPlayerId: rp.id,
         questionId: question.id,
+        quizId: quiz.id,
         userId: user.id,
         choiceId: input.choiceId,
         timeTakenMs,
@@ -351,6 +352,7 @@ export async function finishDailyPlay(
       data: missing.map((q) => ({
         roomPlayerId: rp.id,
         questionId: q.id,
+        quizId: quiz.id,
         userId: user.id,
         choiceId: "",
         timeTakenMs: DAILY_QUESTION_TIME_MS,
@@ -417,66 +419,107 @@ export async function finishDailyPlay(
     if (await awardBadge(user.id, "streak_30")) newBadges.push("streak_30");
   }
 
-  // Compute rank live (today's daily is still LIVE).
-  const lb = await dailyLeaderboardLive(quiz.id);
-  const rank = lb.findIndex((r) => r.userId === user.id);
+  // Compute this finisher's rank without materializing the whole board:
+  // count players ranked strictly ahead (points DESC, totalTimeMs ASC) + 1.
+  const rank = await dailyRankForUser(quiz.id, user.id);
   return {
     scoreCorrect,
     scoreTotal,
-    rank: rank >= 0 ? rank + 1 : null,
+    rank,
     answeredCount,
     questionCount: quiz.questions.length,
     newBadges,
   };
 }
 
+type DailyLeaderboardDbRow = {
+  userId: string;
+  roomPlayerId: string;
+  displayName: string | null;
+  walletAddress: string | null;
+  avatarEmoji: string | null;
+  avatarColor: string | null;
+  points: number;
+  correctCount: number;
+  answeredCount: number;
+  totalTimeMs: number;
+};
+
+// Rank for a single player in a live daily. Returns null if the player has no
+// answers (i.e. not on the board). Mirrors dailyLeaderboardLive ordering:
+// points DESC, then totalTimeMs ASC. Computed as 1 + (# players strictly
+// ahead) so we never build the full board just to read one rank.
+export async function dailyRankForUser(
+  quizId: string,
+  userId: string,
+): Promise<number | null> {
+  const rows = await prisma.$queryRaw<{ rank: number }[]>`
+    WITH scores AS (
+      SELECT
+        rp."userId" AS "userId",
+        COALESCE(SUM(a.points), 0)::int AS "points",
+        COALESCE(SUM(a."timeTakenMs"), 0)::int AS "totalTimeMs",
+        COUNT(a.id)::int AS "answeredCount"
+      FROM "RoomPlayer" rp
+      JOIN "User" u ON u.id = rp."userId" AND u."deletedAt" IS NULL
+      LEFT JOIN "Answer" a ON a."roomPlayerId" = rp.id
+      WHERE rp."quizId" = ${quizId}
+      GROUP BY rp."userId"
+      HAVING COUNT(a.id) > 0
+    ),
+    me AS (
+      SELECT "points", "totalTimeMs" FROM scores WHERE "userId" = ${userId}
+    )
+    SELECT (
+      (SELECT COUNT(*) FROM scores s, me
+        WHERE s."points" > me."points"
+           OR (s."points" = me."points" AND s."totalTimeMs" < me."totalTimeMs"))
+      + 1
+    )::int AS "rank"
+    FROM me
+  `;
+  const rank = rows[0]?.rank;
+  return rank == null ? null : Number(rank);
+}
+
 export async function dailyLeaderboardLive(
   quizId: string,
 ): Promise<LeaderboardRow[]> {
-  const rows = await prisma.roomPlayer.findMany({
-    where: { quizId, user: { deletedAt: null } },
-    include: {
-      user: {
-        select: {
-          id: true,
-          displayName: true,
-          walletAddress: true,
-          avatarEmoji: true,
-          avatarColor: true,
-        },
-      },
-      answers: { select: { points: true, isCorrect: true, timeTakenMs: true } },
-    },
-  });
-  const out: LeaderboardRow[] = rows
-    .filter((rp) => rp.answers.length > 0)
-    .map((rp) => {
-      let points = 0;
-      let correctCount = 0;
-      let totalTimeMs = 0;
-      for (const a of rp.answers) {
-        points += a.points;
-        if (a.isCorrect) correctCount += 1;
-        totalTimeMs += a.timeTakenMs;
-      }
-      return {
-        userId: rp.user.id,
-        roomPlayerId: rp.id,
-        displayName: rp.user.displayName ?? "Player",
-        walletAddress: rp.user.walletAddress,
-        avatarEmoji: rp.user.avatarEmoji,
-        avatarColor: rp.user.avatarColor,
-        points,
-        correctCount,
-        answeredCount: rp.answers.length,
-        totalTimeMs,
-      };
-    });
-  out.sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    return a.totalTimeMs - b.totalTimeMs;
-  });
-  return out;
+  // Single SQL SUM/GROUP BY/ORDER instead of loading every answer into Node.
+  // Mirrors rankedLeaderboardRows in room.service.ts: group per RoomPlayer,
+  // drop players with no answers, order by points DESC then totalTimeMs ASC.
+  const rows = await prisma.$queryRaw<DailyLeaderboardDbRow[]>`
+    SELECT
+      u.id AS "userId",
+      rp.id AS "roomPlayerId",
+      u."displayName" AS "displayName",
+      u."walletAddress" AS "walletAddress",
+      u."avatarEmoji" AS "avatarEmoji",
+      u."avatarColor" AS "avatarColor",
+      COALESCE(SUM(a.points), 0)::int AS "points",
+      COALESCE(SUM(CASE WHEN a."isCorrect" THEN 1 ELSE 0 END), 0)::int AS "correctCount",
+      COUNT(a.id)::int AS "answeredCount",
+      COALESCE(SUM(a."timeTakenMs"), 0)::int AS "totalTimeMs"
+    FROM "RoomPlayer" rp
+    JOIN "User" u ON u.id = rp."userId" AND u."deletedAt" IS NULL
+    LEFT JOIN "Answer" a ON a."roomPlayerId" = rp.id
+    WHERE rp."quizId" = ${quizId}
+    GROUP BY rp.id, u.id
+    HAVING COUNT(a.id) > 0
+    ORDER BY "points" DESC, "totalTimeMs" ASC
+  `;
+  return rows.map((r) => ({
+    userId: r.userId,
+    roomPlayerId: r.roomPlayerId,
+    displayName: r.displayName ?? "Player",
+    walletAddress: r.walletAddress,
+    avatarEmoji: r.avatarEmoji,
+    avatarColor: r.avatarColor,
+    points: Number(r.points),
+    correctCount: Number(r.correctCount),
+    answeredCount: Number(r.answeredCount),
+    totalTimeMs: Number(r.totalTimeMs),
+  }));
 }
 
 // Read leaderboard for a date. "Today" = live aggregation; past days = frozen
