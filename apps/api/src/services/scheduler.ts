@@ -61,10 +61,13 @@ async function tick(log: FastifyBaseLogger): Promise<void> {
   if (dateKey !== lastDailyHousekeepingDateKey) {
     try {
       await runDailyHousekeeping(now, log);
+      // Only advance the dedupe key after housekeeping succeeds. If it throws,
+      // the key stays put so the next 1s tick retries. The underlying
+      // updateMany calls are status-guarded/idempotent, so re-running is safe.
+      lastDailyHousekeepingDateKey = dateKey;
     } catch (e) {
       log.error({ err: e }, "scheduler: daily housekeeping failed");
     }
-    lastDailyHousekeepingDateKey = dateKey;
   }
 
   // 1. SCHEDULED → LIVE for the existing live multiplayer quizzes.

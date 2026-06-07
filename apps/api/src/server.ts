@@ -6,6 +6,7 @@ import { prisma } from "./db.js";
 import { healthRoutes } from "./routes/health.js";
 import { publicLeaderboardRoutes } from "./routes/leaderboard.public.js";
 import { publicProfileRoutes } from "./routes/profile.public.js";
+import { walletAuthRoutes } from "./routes/wallet-auth.public.js";
 import { publicQuizRoutes } from "./routes/quizzes.public.js";
 import { adminQuizRoutes } from "./routes/quizzes.admin.js";
 import { roomRoutes } from "./routes/rooms.js";
@@ -61,6 +62,7 @@ async function main() {
   await app.register(healthRoutes);
   await app.register(publicQuizRoutes);
   await app.register(publicProfileRoutes);
+  await app.register(walletAuthRoutes);
   await app.register(publicLeaderboardRoutes);
   await app.register(roomRoutes);
   if (config.ENABLE_EMBEDDED_SSE) {
