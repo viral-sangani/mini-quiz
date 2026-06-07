@@ -367,3 +367,41 @@ then seal it.
   with no PVC), we have to re-mirror manually. See `runbooks.md`.
 - The `api` SealedSecret + `data` SealedSecret can drift if you rotate
   one but not the other. Discipline-only safeguard.
+
+---
+
+### 14. ingress-nginx runs as a Deployment, not a DaemonSet
+
+**Context**: The capacity-prewarmer scales the DOKS node pool from 1 to 2
+nodes ~10 min before a paid game and resets the floor to 1 afterward. We
+observed the surplus node never getting reclaimed by the cluster-autoscaler
+after scale-down: it stayed `Ready` indefinitely even though
+`min_nodes=1`.
+
+**Decision**: Run the ingress-nginx controller as a `Deployment` with
+`replicaCount: 1` (was `kind: DaemonSet`), and annotate the pod with
+`cluster-autoscaler.kubernetes.io/safe-to-evict: "true"`. Config lives in
+`deploy/apps/ingress-nginx.yaml`.
+
+**Why**: A DaemonSet runs one controller pod on *every* node by contract.
+That pod can't be moved (the DaemonSet requires one per node), so the
+cluster-autoscaler refuses to drain the surplus prewarm node — silently
+defeating the prewarmer's scale-down and leaving us paying for an extra
+`s-4vcpu-8gb` node. Since ingress now sits behind the DigitalOcean
+LoadBalancer (decision #4), per-node host coverage is unnecessary — the LB
+fans out to controller pods via the Service, so a single replica is
+sufficient. `safe-to-evict` tells the autoscaler it may move the controller
+during scale-down.
+
+**Alternatives considered**:
+- **Deployment, 2 replicas + anti-affinity + PDB** — zero-downtime ingress,
+  but effectively pins ~2 nodes when replicas can't co-locate, partly
+  defeating the scale-down savings. Not worth it for a launch-week PoC.
+- **Keep DaemonSet + PDB** — a PDB doesn't help; the problem is the
+  one-pod-per-node contract, not disruption budget.
+
+**Consequences**:
+- A brief ingress blip is possible during a controller restart/reschedule
+  (single replica). Acceptable for the current PoC; revisit if we need HA.
+- Prewarm nodes now drain on their own after the cooldown, restoring the
+  intended 1-node idle floor and the cost savings.

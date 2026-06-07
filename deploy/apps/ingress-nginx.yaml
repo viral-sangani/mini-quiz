@@ -16,9 +16,17 @@ spec:
       valueFiles: []
       values: |
         controller:
-          kind: DaemonSet
+          # Deployment (not DaemonSet) so the cluster-autoscaler can drain a
+          # prewarm node after capacity-prewarmer resets the floor to 1. A
+          # DaemonSet pins one controller pod to every node, which blocks the
+          # surplus node from ever being reclaimed. Behind the DO LoadBalancer
+          # a single replica is sufficient. See docs/decisions.md.
+          kind: Deployment
+          replicaCount: 1
           hostNetwork: false
           dnsPolicy: ClusterFirst
+          podAnnotations:
+            cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
           service:
             enabled: true
             type: LoadBalancer
