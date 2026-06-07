@@ -213,6 +213,24 @@ export default function ProfilePage() {
         })}
       </div>
 
+      {/* Legal footer */}
+      <div
+        style={{
+          marginTop: 20,
+          padding: "16px 16px 0",
+          borderTop: "1px solid var(--line)",
+          textAlign: "center",
+        }}
+      >
+        <Link
+          href="/terms"
+          className="mq-body"
+          style={{ fontSize: 13, fontWeight: 700, color: "var(--ink-soft)" }}
+        >
+          Terms &amp; Conditions
+        </Link>
+      </div>
+
       <BadgeDetailSheet
         open={openBadge !== null}
         badge={openBadge}

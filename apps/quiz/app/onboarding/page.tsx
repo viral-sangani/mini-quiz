@@ -34,6 +34,25 @@ export default function OnboardingWelcomePage() {
         <Link href="/onboarding/avatar">
           <MQButton block size="lg">Let&apos;s go</MQButton>
         </Link>
+        <p
+          className="mq-body"
+          style={{
+            fontSize: 12,
+            textAlign: "center",
+            color: "var(--ink-faint)",
+            marginTop: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          By continuing, you agree to our{" "}
+          <Link
+            href="/terms"
+            style={{ color: "var(--primary-shade)", fontWeight: 700 }}
+          >
+            Terms &amp; Conditions
+          </Link>
+          .
+        </p>
       </div>
     </>
   );

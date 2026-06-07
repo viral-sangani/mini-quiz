@@ -14,7 +14,15 @@ const nunito = Nunito({
 export const metadata: Metadata = {
   title: "Mini Quiz — Celo × MiniPay",
   description: "A live multiplayer quiz for the MiniPay roadshow",
-  icons: [{ rel: "icon", url: "/icon.svg" }],
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {
