@@ -7,7 +7,6 @@ import {
   startDailyPlay,
   submitDailyAnswer,
 } from "../services/daily.service.js";
-import { captureBackendEvent } from "../services/posthog.js";
 
 const walletSchema = z
   .string()
@@ -52,15 +51,6 @@ export async function dailyPublicRoutes(app: FastifyInstance) {
               : 410;
       return reply.code(status).send({ error: result.error, code: result.code });
     }
-    captureBackendEvent("daily play started", {
-      distinctId: parsed.data.walletAddress,
-      properties: {
-        quiz_id: result.quizId,
-        room_player_id: result.roomPlayerId,
-        question_count: result.questions.length,
-        answered_count: result.answeredQuestionIds.length,
-      },
-    });
     return result;
   });
 
@@ -80,16 +70,6 @@ export async function dailyPublicRoutes(app: FastifyInstance) {
     if (result.kind === "error") {
       return reply.code(400).send({ error: result.error });
     }
-    captureBackendEvent("daily answer submitted", {
-      distinctId: parsed.data.walletAddress,
-      properties: {
-        question_id: parsed.data.questionId,
-        choice_id: parsed.data.choiceId,
-        time_taken_ms: parsed.data.timeTakenMs,
-        is_correct: result.isCorrect,
-        points: result.points,
-      },
-    });
     return { isCorrect: result.isCorrect, points: result.points };
   });
 
@@ -102,17 +82,6 @@ export async function dailyPublicRoutes(app: FastifyInstance) {
     if ("error" in result) {
       return reply.code(400).send({ error: result.error });
     }
-    captureBackendEvent("daily play finished", {
-      distinctId: parsed.data.walletAddress,
-      properties: {
-        score_correct: result.scoreCorrect,
-        score_total: result.scoreTotal,
-        rank: result.rank,
-        answered_count: result.answeredCount,
-        question_count: result.questionCount,
-        new_badges: result.newBadges,
-      },
-    });
     return result;
   });
 

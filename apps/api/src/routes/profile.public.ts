@@ -8,10 +8,6 @@ import {
   updateMyProfile,
 } from "../services/profile.service.js";
 import { requireWallet } from "../services/wallet-auth.service.js";
-import {
-  captureBackendEvent,
-  identifyWallet,
-} from "../services/posthog.js";
 
 const checkSchema = z.object({
   value: z.string().min(1).max(40),
@@ -47,23 +43,7 @@ export async function publicProfileRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
-    const result = await getOrCreatePlayerByWallet(parsed.data.walletAddress);
-    identifyWallet(parsed.data.walletAddress, {
-      user_id: result.user.id,
-      username: result.user.username,
-      display_name: result.user.displayName,
-      needs_onboarding: result.needsOnboarding,
-      level: result.profile.level,
-    });
-    captureBackendEvent("profile loaded", {
-      distinctId: parsed.data.walletAddress,
-      properties: {
-        user_id: result.user.id,
-        needs_onboarding: result.needsOnboarding,
-        level: result.profile.level,
-      },
-    });
-    return result;
+    return getOrCreatePlayerByWallet(parsed.data.walletAddress);
   });
 
   // PATCH /users/me  (wallet from verified session token; body = profile fields)
@@ -84,23 +64,6 @@ export async function publicProfileRoutes(app: FastifyInstance) {
             : 400;
       return reply.code(status).send(result);
     }
-    identifyWallet(walletAddress, {
-      username: result.username,
-      display_name: result.displayName,
-      avatar_emoji: result.avatarEmoji,
-      avatar_color: result.avatarColor,
-      level: result.level,
-      needs_onboarding: false,
-    });
-    captureBackendEvent("profile updated", {
-      distinctId: walletAddress,
-      properties: {
-        user_id: result.id,
-        has_username: Boolean(result.username),
-        has_display_name: Boolean(result.displayName),
-        has_avatar: Boolean(result.avatarEmoji),
-      },
-    });
     return { profile: result };
   });
 

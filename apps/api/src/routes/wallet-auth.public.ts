@@ -4,10 +4,6 @@ import {
   issueWalletNonce,
   verifyWalletSignature,
 } from "../services/wallet-auth.service.js";
-import {
-  captureBackendEvent,
-  identifyWallet,
-} from "../services/posthog.js";
 
 // Public wallet-ownership auth endpoints. The player app calls these to prove
 // it controls a wallet (EIP-191 personal_sign, MiniPay-compatible) and receive
@@ -51,15 +47,6 @@ export async function walletAuthRoutes(app: FastifyInstance) {
       const status = result.code === "BAD_INPUT" ? 400 : 401;
       return reply.code(status).send({ error: result.code });
     }
-    identifyWallet(result.address, {
-      wallet_session_expires_in_seconds: result.expiresInSeconds,
-    });
-    captureBackendEvent("wallet session verified", {
-      distinctId: result.address,
-      properties: {
-        expires_in_seconds: result.expiresInSeconds,
-      },
-    });
     return {
       token: result.token,
       address: result.address,
