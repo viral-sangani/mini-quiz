@@ -12,6 +12,7 @@ import {
 import type { CheckUsernameResult, MyProfile, PublicUser } from "@mini-quiz/shared";
 import { api } from "./api-client";
 import { connectAddress, isMiniPay } from "./minipay";
+import { capturePlayerEvent } from "./posthog-client";
 
 // Possible states the player app can be in. Pages branch off this:
 //
@@ -100,6 +101,11 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         walletAddress: state.walletAddress,
         ...input,
       });
+      capturePlayerEvent("profile saved", {
+        wallet_address: state.walletAddress.toLowerCase(),
+        had_username: Boolean(state.user.username),
+        had_display_name: Boolean(state.user.displayName),
+      });
       await refreshFromWallet(state.walletAddress);
       return res.profile;
     },
@@ -124,6 +130,10 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         setState({ status: "no-wallet" });
         return;
       }
+      capturePlayerEvent("wallet connected", {
+        wallet_address: addr.toLowerCase(),
+        wallet_provider: "minipay",
+      });
       try {
         await refreshFromWallet(addr as `0x${string}`);
       } catch (error) {

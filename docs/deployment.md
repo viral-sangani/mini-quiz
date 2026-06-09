@@ -183,6 +183,8 @@ has `rootDirectory` set so Vercel scopes the build to its subdir.
 
 `mini-quiz` (quiz):
 - `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`
+- `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` — PostHog project token (`phc_...`)
+- `NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com`
 
 `mini-quiz-admin`:
 - `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`
@@ -192,6 +194,11 @@ has `rootDirectory` set so Vercel scopes the build to its subdir.
 - `ADMIN_EMAILS` — comma-separated, lowercased; same set the api Pod uses
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - `EMAIL_FROM` (Nodemailer email magic-link disabled until `EMAIL_SERVER` is set)
+
+`apps/api` / DOKS `api-secrets`:
+- `POSTHOG_PROJECT_TOKEN` — same PostHog project token, used by `posthog-node`
+  for backend capture
+- `POSTHOG_HOST=https://us.i.posthog.com`
 
 ### To deploy a Vercel app from the CLI
 

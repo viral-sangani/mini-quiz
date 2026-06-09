@@ -234,6 +234,15 @@ boot). Frontend env vars in each app's `next.config.mjs` and
   prewarmer. To regenerate: see `runbooks.md`.
 - **Vercel**: project Environment Variables panel for `apps/quiz` and
   `apps/admin`. Set `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`.
+  The quiz app also sets
+  `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=<phc_...>` and
+  `NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com` for player analytics,
+  wallet-based identity, session replay, and client error capture. The admin
+  app intentionally does not load PostHog.
+- **PostHog backend capture**: API pods read `POSTHOG_PROJECT_TOKEN=<phc_...>`
+  and `POSTHOG_HOST=https://us.i.posthog.com` from `api-secrets`. These power
+  public backend request events, wallet/profile events, daily/practice/live
+  quiz events, and API exception capture. Admin routes are excluded.
 - **Cluster-injected**: `PGUSER`, `PGPASSWORD`, `REDIS_PASSWORD`,
   `DATABASE_URL`, `REDIS_URL`, `NATS_URL` — composed in
   `deploy/charts/api/templates/deployment.yaml` from the `miniquiz-pg-app`

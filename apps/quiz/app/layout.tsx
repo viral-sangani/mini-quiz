@@ -1,6 +1,10 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Nunito } from "next/font/google";
+import {
+  PostHogAnalytics,
+  PostHogProfileIdentity,
+} from "@/components/PostHogAnalytics";
 import { PlayerCacheProvider } from "@/lib/player-cache";
 import { ProfileProvider } from "@/lib/profile-context";
 
@@ -36,9 +40,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={nunito.variable}>
       <body className="font-display antialiased">
-        <ProfileProvider>
-          <PlayerCacheProvider>{children}</PlayerCacheProvider>
-        </ProfileProvider>
+        <PostHogAnalytics>
+          <ProfileProvider>
+            <PostHogProfileIdentity />
+            <PlayerCacheProvider>{children}</PlayerCacheProvider>
+          </ProfileProvider>
+        </PostHogAnalytics>
       </body>
     </html>
   );

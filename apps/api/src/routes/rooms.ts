@@ -8,6 +8,7 @@ import {
   submitAnswer,
 } from "../services/room.service.js";
 import { listPayoutsForQuiz } from "../services/payout.service.js";
+import { captureBackendEvent } from "../services/posthog.js";
 
 const joinSchema = z.object({
   walletAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
@@ -51,6 +52,15 @@ export async function roomRoutes(app: FastifyInstance) {
                   : 400;
         return reply.code(status).send(result);
       }
+      captureBackendEvent("live quiz joined", {
+        distinctId: parsed.data.walletAddress,
+        properties: {
+          quiz_code: req.params.code.toUpperCase(),
+          quiz_id: result.quizId,
+          room_player_id: result.roomPlayerId,
+          user_id: result.userId,
+        },
+      });
       return result;
     },
   );
@@ -79,6 +89,18 @@ export async function roomRoutes(app: FastifyInstance) {
                   : 400;
         return reply.code(status).send(result);
       }
+      captureBackendEvent("live answer submitted", {
+        distinctId: parsed.data.walletAddress,
+        properties: {
+          quiz_code: req.params.code.toUpperCase(),
+          room_player_id: parsed.data.roomPlayerId,
+          question_id: parsed.data.questionId,
+          choice_id: parsed.data.choiceId,
+          time_taken_ms: parsed.data.timeTakenMs,
+          is_correct: result.isCorrect,
+          points: result.points,
+        },
+      });
       return result;
     },
   );

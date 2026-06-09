@@ -29,6 +29,8 @@ stringData:
   CELO_RPC_URL: "https://forno.celo.org"
   CORS_ORIGIN: "https://miniquiz.club,https://admin.miniquiz.club"
   LOG_LEVEL: "info"
+  POSTHOG_PROJECT_TOKEN: "phc_..."
+  POSTHOG_HOST: "https://us.i.posthog.com"
 EOF
 
 # 3. Seal it

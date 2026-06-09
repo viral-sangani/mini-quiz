@@ -56,6 +56,11 @@ const schema = z.object({
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .default("info"),
+  POSTHOG_PROJECT_TOKEN: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  POSTHOG_HOST: z.string().url().default("https://us.i.posthog.com"),
   // Moonshot/Kimi for AI question generation. Optional so the api can boot
   // without a key — the /admin/ai/generate-questions route returns a clean
   // 503 if missing instead of crashing on import.

@@ -21,9 +21,18 @@ import { practiceAdminRoutes } from "./routes/practice.admin.js";
 import { aiGenAdminRoutes } from "./routes/ai-gen.admin.js";
 import { treasuryAdminRoutes } from "./routes/treasury.admin.js";
 import { roomEventRoutes } from "./routes/room-events.js";
+import {
+  captureBackendEvent,
+  captureBackendException,
+  distinctIdFromRequest,
+  requestAnalyticsProperties,
+  shouldCapturePublicRequest,
+  shutdownPostHog,
+} from "./services/posthog.js";
 import { startBroker, stopBroker } from "./sse/broker.js";
 
 async function main() {
+  const requestStartMs = new WeakMap<object, number>();
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
@@ -36,6 +45,32 @@ async function main() {
   });
 
   await app.register(sensible);
+
+  app.addHook("onRequest", async (req) => {
+    requestStartMs.set(req, Date.now());
+  });
+
+  app.addHook("onResponse", async (req, reply) => {
+    if (!shouldCapturePublicRequest(req)) return;
+    captureBackendEvent("backend request completed", {
+      distinctId: distinctIdFromRequest(req),
+      properties: {
+        ...requestAnalyticsProperties(req),
+        status_code: reply.statusCode,
+        duration_ms: Date.now() - (requestStartMs.get(req) ?? Date.now()),
+      },
+    });
+  });
+
+  app.setErrorHandler((err, req, reply) => {
+    if (shouldCapturePublicRequest(req)) {
+      captureBackendException(err, {
+        distinctId: distinctIdFromRequest(req),
+        properties: requestAnalyticsProperties(req),
+      });
+    }
+    reply.send(err);
+  });
 
   // Accept empty JSON bodies on POSTs that legitimately have no payload
   // (e.g. /admin/users/:id/unflag, /admin/quizzes/:id/end). Fastify's default
@@ -86,6 +121,7 @@ async function main() {
     app.log.info({ signal }, "shutting down");
     await stopBroker();
     await app.close();
+    await shutdownPostHog();
     await prisma.$disconnect();
     process.exit(0);
   };

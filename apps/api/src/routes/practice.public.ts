@@ -6,6 +6,7 @@ import {
   startPracticeSession,
   submitPracticeAnswer,
 } from "../services/practice.service.js";
+import { captureBackendEvent } from "../services/posthog.js";
 
 const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "invalid walletAddress");
 
@@ -48,6 +49,16 @@ export async function practicePublicRoutes(app: FastifyInstance) {
             : 400;
       return reply.code(status).send({ error: result.error, code: result.code });
     }
+    captureBackendEvent("practice play started", {
+      distinctId: parsed.data.walletAddress,
+      properties: {
+        quiz_id: result.quizId,
+        play_id: result.playId,
+        slug: parsed.data.slug,
+        title: result.title,
+        question_count: result.questions.length,
+      },
+    });
     return result;
   });
 
@@ -64,6 +75,15 @@ export async function practicePublicRoutes(app: FastifyInstance) {
     if (result.kind === "error") {
       return reply.code(400).send({ error: result.error });
     }
+    captureBackendEvent("practice answer submitted", {
+      distinctId: parsed.data.walletAddress,
+      properties: {
+        play_id: parsed.data.playId,
+        question_id: parsed.data.questionId,
+        choice_id: parsed.data.choiceId,
+        is_correct: result.isCorrect,
+      },
+    });
     return {
       isCorrect: result.isCorrect,
       correctChoiceId: result.correctChoiceId,
@@ -83,6 +103,15 @@ export async function practicePublicRoutes(app: FastifyInstance) {
     if ("error" in result) {
       return reply.code(400).send({ error: result.error });
     }
+    captureBackendEvent("practice play finished", {
+      distinctId: parsed.data.walletAddress,
+      properties: {
+        play_id: parsed.data.playId,
+        score_correct: result.scoreCorrect,
+        score_total: result.scoreTotal,
+        new_badges: result.newBadges,
+      },
+    });
     return result;
   });
 }
