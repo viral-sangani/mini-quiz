@@ -47,15 +47,25 @@ function messageFromErrorBody(body: unknown): string | null {
 
 async function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<T> {
   const { token, headers, ...rest } = opts;
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...rest,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...rest,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(headers ?? {}),
+      },
+      cache: "no-store",
+    });
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : "network error";
+    throw new ApiError(
+      0,
+      `Could not reach API at ${API_BASE_URL}: ${reason}`,
+      null,
+    );
+  }
   if (!res.ok) {
     let body: unknown = null;
     let text = "";

@@ -6,9 +6,9 @@ import { config } from "../config.js";
 // `/chat/completions` endpoint instead of the Vercel AI SDK provider.
 //
 // A direct fetch is dependency-light, fully observable, and gives us
-// `response_format: { type: "json_object" }` through OpenRouter's
-// OpenAI-compatible API. We still retry once on empty/invalid output and
-// Zod-validate the parsed response.
+// OpenRouter's OpenAI-compatible API. Prefer strict structured outputs for
+// Gemini/OpenRouter, fall back to basic JSON mode if a routed provider rejects
+// that parameter, then Zod-validate the parsed response.
 //
 // Defaults to google/gemini-3.5-flash.
 
@@ -43,6 +43,53 @@ const questionItemSchema = z.object({
 const responseEnvelopeSchema = z.object({
   questions: z.array(questionItemSchema).min(1).max(20),
 });
+
+function makeQuestionResponseJsonSchema(withExplanations: boolean): object {
+  const itemProperties = {
+    prompt: { type: "string", minLength: 1, maxLength: 280 },
+    choices: {
+      type: "array",
+      minItems: 4,
+      maxItems: 4,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", enum: ["a", "b", "c", "d"] },
+          label: { type: "string", minLength: 1, maxLength: 200 },
+        },
+        required: ["id", "label"],
+      },
+    },
+    correctChoiceId: { type: "string", enum: ["a", "b", "c", "d"] },
+    ...(withExplanations
+      ? { explanation: { type: "string", maxLength: 600 } }
+      : {}),
+  };
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      questions: {
+        type: "array",
+        minItems: 1,
+        maxItems: 20,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: itemProperties,
+          required: [
+            "prompt",
+            "choices",
+            "correctChoiceId",
+            ...(withExplanations ? ["explanation"] : []),
+          ],
+        },
+      },
+    },
+    required: ["questions"],
+  };
+}
 
 function buildSystemPrompt(): string {
   return [
@@ -120,10 +167,16 @@ export class AiGenerationDisabledError extends Error {
   }
 }
 
+type ChatMessageContent =
+  | string
+  | Array<{ type?: string; text?: string }>
+  | null
+  | undefined;
+
 // Shape of OpenAI-compatible /chat/completions response (subset we use).
 type ChatCompletionResponse = {
   choices?: Array<{
-    message?: { content?: string | null };
+    message?: { content?: ChatMessageContent };
     finish_reason?: string;
   }>;
   usage?: {
@@ -134,19 +187,66 @@ type ChatCompletionResponse = {
   error?: { message?: string; type?: string; code?: string };
 };
 
+type ResponseFormatMode = "json_schema" | "json_object";
+
+function makeResponseFormat(
+  mode: ResponseFormatMode,
+  name: string,
+  schemaObject: object,
+): object {
+  if (mode === "json_object") return { type: "json_object" };
+  return {
+    type: "json_schema",
+    json_schema: {
+      name,
+      strict: true,
+      schema: schemaObject,
+    },
+  };
+}
+
+function textFromMessageContent(content: ChatMessageContent): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => (part.type === "text" || !part.type ? part.text ?? "" : ""))
+    .join("");
+}
+
+function isResponseFormatError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /response_format|json_schema|structured output|require_parameters|unsupported parameter/i.test(
+    msg,
+  );
+}
+
 async function callOpenRouter(args: {
   systemPrompt: string;
   userPrompt: string;
   maxTokens: number;
   abortSignal: AbortSignal;
+  responseName: string;
+  responseSchema: object;
+  responseFormatMode?: ResponseFormatMode;
 }): Promise<{ text: string; finishReason: string }> {
   if (!config.OPENROUTER_API_KEY) throw new AiGenerationDisabledError();
   const url = `${config.OPENROUTER_BASE_URL.replace(/\/+$/, "")}/chat/completions`;
+  const responseFormatMode = args.responseFormatMode ?? "json_schema";
   const body = {
     model: config.OPENROUTER_MODEL,
     temperature: 0.3,
     max_tokens: args.maxTokens,
-    response_format: { type: "json_object" },
+    response_format: makeResponseFormat(
+      responseFormatMode,
+      args.responseName,
+      args.responseSchema,
+    ),
+    // Keep OpenRouter from silently routing a structured-output request to a
+    // backend that ignores/rejects response_format. This matters for Gemini
+    // model aliases where several upstream providers can be eligible.
+    ...(responseFormatMode === "json_schema"
+      ? { provider: { require_parameters: true } }
+      : {}),
     messages: [
       { role: "system", content: args.systemPrompt },
       { role: "user", content: args.userPrompt },
@@ -179,9 +279,33 @@ async function callOpenRouter(args: {
   const json = (await res.json()) as ChatCompletionResponse;
   const choice = json.choices?.[0];
   return {
-    text: choice?.message?.content ?? "",
+    text: textFromMessageContent(choice?.message?.content),
     finishReason: choice?.finish_reason ?? "unknown",
   };
+}
+
+async function callOpenRouterWithFallback(args: {
+  systemPrompt: string;
+  userPrompt: string;
+  maxTokens: number;
+  abortSignal: AbortSignal;
+  responseName: string;
+  responseSchema: object;
+}): Promise<{ text: string; finishReason: string }> {
+  try {
+    return await callOpenRouter({
+      ...args,
+      responseFormatMode: "json_schema",
+    });
+  } catch (e) {
+    if (e instanceof AiGenerationDisabledError || !isResponseFormatError(e)) {
+      throw e;
+    }
+    return callOpenRouter({
+      ...args,
+      responseFormatMode: "json_object",
+    });
+  }
 }
 
 async function attemptGeneration(
@@ -199,11 +323,13 @@ async function attemptGeneration(
   let text = "";
   let finishReason = "unknown";
   try {
-    const result = await callOpenRouter({
+    const result = await callOpenRouterWithFallback({
       systemPrompt: buildSystemPrompt(),
       userPrompt: buildUserPrompt(opts),
       maxTokens,
       abortSignal: ac.signal,
+      responseName: "quiz_questions",
+      responseSchema: makeQuestionResponseJsonSchema(opts.withExplanations),
     });
     text = result.text;
     finishReason = result.finishReason;
@@ -277,7 +403,7 @@ export async function generateQuestions(
 // India") — empty seed produces broadly engaging picks.
 //
 // Design intentionally mirrors generateQuestions: same direct fetch +
-// json_object response + timeout + retry-once on empty/invalid.
+// structured response + timeout + retry-once on empty/invalid.
 
 export type SuggestMode = "live" | "daily" | "practice";
 
@@ -299,6 +425,28 @@ const topicItemSchema = z.object({
 const topicEnvelopeSchema = z.object({
   topics: z.array(topicItemSchema).min(1).max(20),
 });
+
+const topicResponseJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    topics: {
+      type: "array",
+      minItems: 1,
+      maxItems: 20,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          title: { type: "string", minLength: 2, maxLength: 80 },
+          description: { type: "string", maxLength: 160 },
+        },
+        required: ["title", "description"],
+      },
+    },
+  },
+  required: ["topics"],
+} as const;
 
 function buildTopicSystemPrompt(): string {
   return [
@@ -348,11 +496,13 @@ async function attemptTopicSuggestion(
 
   let text = "";
   try {
-    const res = await callOpenRouter({
+    const res = await callOpenRouterWithFallback({
       systemPrompt: buildTopicSystemPrompt(),
       userPrompt: buildTopicUserPrompt(opts),
       maxTokens,
       abortSignal: ac.signal,
+      responseName: "quiz_topics",
+      responseSchema: topicResponseJsonSchema,
     });
     text = res.text;
   } catch (e) {
