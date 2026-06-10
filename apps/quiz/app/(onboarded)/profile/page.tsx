@@ -8,6 +8,7 @@ import { BadgeDetailSheet } from "@/components/BadgeDetailSheet";
 import { Icon, type IconName } from "@/components/Icon";
 import { Loader } from "@/components/Loader";
 import { MQCard } from "@/components/MQCard";
+import { MQButton } from "@/components/MQButton";
 import { ProgressBar } from "@/components/ProgressBar";
 import { StatTile } from "@/components/StatTile";
 import { useProfile } from "@/lib/profile-context";
@@ -222,12 +223,40 @@ export default function ProfilePage() {
           textAlign: "center",
         }}
       >
+        <Link href="/feedback" style={{ display: "block", textDecoration: "none" }}>
+          <MQButton
+            block
+            size="md"
+            variant="ghost"
+            style={{ marginBottom: 16 }}
+          >
+            Feedback &amp; support
+          </MQButton>
+        </Link>
         <Link
           href="/terms"
           className="mq-body"
           style={{ fontSize: 13, fontWeight: 700, color: "var(--ink-soft)" }}
         >
           Terms &amp; Conditions
+        </Link>
+        <span
+          className="mq-body"
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "var(--ink-faint)",
+            margin: "0 8px",
+          }}
+        >
+          ·
+        </span>
+        <Link
+          href="/privacy"
+          className="mq-body"
+          style={{ fontSize: 13, fontWeight: 700, color: "var(--ink-soft)" }}
+        >
+          Privacy Policy
         </Link>
       </div>
 

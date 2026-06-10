@@ -91,6 +91,9 @@
 
 - Entry-point page is `/play/[code]` after the player joins via QR or
   deep link. Lobby → Question → Reveal → Leaderboard cycle.
+- Public legal routes live at `/terms` and `/privacy`.
+- Onboarded users can open `/feedback` from Profile to submit feedback,
+  complaints, or support issues through the linked Google Form.
 - Talks to API via `NEXT_PUBLIC_API_BASE_URL`. SSE for live state.
 - MiniPay-specific: `lib/minipay.ts` detects `window.ethereum.isMiniPay`
   and auto-connects the wallet (no connect button).

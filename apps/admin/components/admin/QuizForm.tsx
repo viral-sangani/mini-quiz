@@ -58,6 +58,7 @@ const CHOICE_IDS = ["a", "b", "c", "d"] as const;
 const LOBBY_PRESETS = [
   { label: "5 min", value: 5 * 60_000 },
   { label: "15 min", value: 15 * 60_000 },
+  { label: "1 hour", value: 60 * 60_000 },
 ] as const;
 
 function defaultValue(): QuizFormValue {

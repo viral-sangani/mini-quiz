@@ -47,7 +47,7 @@ export function AIQuestionGeneratorDialog({
   onGenerated,
 }: Props) {
   const [topic, setTopic] = useState("");
-  const [difficulty, setDifficulty] = useState<"EASY" | "MEDIUM" | "HARD">("MEDIUM");
+  const [difficulty, setDifficulty] = useState<"EASY" | "MEDIUM" | "HARD">("EASY");
   const [style, setStyle] = useState<"FACT" | "CONCEPTUAL" | "MIXED">("MIXED");
   const [count, setCount] = useState(defaultCount);
   const [language, setLanguage] = useState("English");
@@ -61,7 +61,7 @@ export function AIQuestionGeneratorDialog({
   useEffect(() => {
     if (open) {
       setTopic("");
-      setDifficulty("MEDIUM");
+      setDifficulty("EASY");
       setStyle("MIXED");
       setCount(defaultCount);
       setLanguage("English");
@@ -178,7 +178,7 @@ export function AIQuestionGeneratorDialog({
                 style={{ flex: 1 }}
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g. Celo basics, World capitals, JavaScript closures"
+              placeholder="e.g. Brazil vs Spain, football basics, match-day countries"
                 disabled={submitting || suggesting}
               />
               <button
@@ -345,7 +345,7 @@ export function AIQuestionGeneratorDialog({
           )}
           {submitting && (
             <div style={{ fontSize: 12, color: "var(--a-ink-soft)" }}>
-              Generating with Kimi… this can take 10–30 seconds.
+              Generating with OpenRouter… this can take 10–30 seconds.
             </div>
           )}
         </div>

@@ -2,9 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-// Effective date is intentionally left as a placeholder until legal sign-off.
-// Update this single constant when the date is confirmed.
-const EFFECTIVE_DATE = "[TBD]";
+const EFFECTIVE_DATE = "June 8, 2026";
 
 const LEGAL_EMAIL = "legal@celo.org";
 
@@ -65,9 +63,14 @@ export default function TermsPage() {
             Services.
           </P>
           <P>
-            These Terms incorporate by reference our Privacy Policy (available at
-            [Link to Mini App Privacy Policy]) and any app-specific terms presented
-            within a Mini App.
+            These Terms incorporate by reference our{" "}
+            <Link
+              href="/privacy"
+              style={{ color: "var(--primary-shade)", fontWeight: 700 }}
+            >
+              Privacy Policy
+            </Link>{" "}
+            and any app-specific terms presented within a Mini App.
           </P>
         </Section>
 
@@ -148,6 +151,16 @@ export default function TermsPage() {
             no fee for playing MiniQuiz.
           </P>
           <P>
+            Mondeto (mondeto.app) — a game where you may purchase and sell pixels
+            on a digital representation of the world one pixel at a time. If
+            another user wishes to purchase the pixel they own, they may do so by
+            paying twice (2 times) the purchase price. However, over a fourteen
+            (14) day period, the price of an owned pixel halves from the original
+            purchase price. Operated through its own smart contract; Mondeto
+            accepts payments in USDT, USDC and USDm.
+          </P>
+          <P>MiniStreak — a daily check-in game with weekly rewards.</P>
+          <P>
             We may add, modify, suspend or discontinue any feature at any time. The
             Services are provided on an &lsquo;as available&rsquo; basis and depend on
             third-party infrastructure including the MiniPay environment and the
@@ -157,11 +170,13 @@ export default function TermsPage() {
 
         <Section n="6" title="Fees &amp; Prizes">
           <P>
-            For MiniQuiz, judging and prize amounts are determined in the sole
-            discretion of and paid by Celo Core Co. via its admin process in USDT.
-            Participating in some of the Services and transacting on the Celo
-            Network may require the payment of network &ldquo;gas&rdquo; fees. Gas fees
-            fluctuate, are payable by you to network validators, and are
+            For Mondeto, Celo Core Co. may receive a pass-through service fee of
+            up to 5% of the value of each buy and sell transaction in the Mini
+            App. For MiniQuiz, judging and prize amounts are determined in the
+            sole discretion of and paid by Celo Core Co. via its admin process in
+            USDT. Participating in some of the Services and transacting on the
+            Celo Network may require the payment of network &ldquo;gas&rdquo; fees. Gas
+            fees fluctuate, are payable by you to network validators, and are
             non-refundable. Applicable amounts and currency are presented to you
             before you confirm a transaction.
           </P>
@@ -416,6 +431,15 @@ export default function TermsPage() {
             Back to Mini Quiz
           </span>
         </Link>
+        <div style={{ marginTop: 10 }}>
+          <Link
+            href="/privacy"
+            className="mq-body"
+            style={{ fontSize: 13, fontWeight: 800, color: "var(--ink-soft)" }}
+          >
+            Privacy Policy
+          </Link>
+        </div>
       </footer>
     </main>
   );

@@ -47,6 +47,10 @@ const responseEnvelopeSchema = z.object({
 function buildSystemPrompt(): string {
   return [
     "You are a quiz question generator.",
+    "Default to accessible, easy questions unless the admin explicitly selected MEDIUM or HARD.",
+    "For football campaign topics, make questions football-first and tie them to the teams, countries, players, stadiums, flags, history, or culture named in the topic or notes.",
+    "Country trivia is allowed when it is clearly connected to a match-day team or country.",
+    "Do not combine the words 'FIFA' and 'World Cup' in promotional-sounding text. If those terms are needed inside a factual quiz question, keep the wording neutral and avoid using them together as a campaign label.",
     "Reply with ONLY a single valid JSON object — no markdown fences, no prose, no code blocks.",
     "The JSON object MUST match this exact shape:",
     `{"questions":[{"prompt":"...","choices":[{"id":"a","label":"..."},{"id":"b","label":"..."},{"id":"c","label":"..."},{"id":"d","label":"..."}],"correctChoiceId":"a","explanation":"..."}, ...]}`,
@@ -60,11 +64,13 @@ function buildSystemPrompt(): string {
 }
 
 function buildUserPrompt(opts: GenerateOptions): string {
+  const difficulty = opts.difficulty ?? "EASY";
   const lines = [
     `Generate ${opts.count} multiple-choice quiz questions about: ${opts.topic}.`,
-    `Difficulty: ${opts.difficulty ?? "MEDIUM"}.`,
+    `Difficulty: ${difficulty}. Use EASY unless this line says MEDIUM or HARD.`,
     `Style: ${opts.style ?? "MIXED"} (FACT = direct recall; CONCEPTUAL = understanding; MIXED = both).`,
     `Language: ${opts.language ?? "English"}.`,
+    "If this is for a football match-day campaign, prioritize easy football questions and simple country questions related to the teams playing that day.",
   ];
   if (opts.notes) lines.push(`Additional guidance: ${opts.notes}`);
   if (opts.withExplanations) {
@@ -297,6 +303,7 @@ const topicEnvelopeSchema = z.object({
 function buildTopicSystemPrompt(): string {
   return [
     "You are a quiz topic suggester.",
+    "For live campaign topics, prefer football-first, match-day topics that can also include country trivia for the teams playing.",
     "Reply with ONLY a single valid JSON object — no markdown fences, no prose, no code blocks.",
     "The JSON object MUST match this exact shape:",
     `{"topics":[{"title":"...","description":"..."}, ...]}`,
@@ -305,13 +312,14 @@ function buildTopicSystemPrompt(): string {
     "- Each description is one short sentence (under 160 chars) explaining what the topic covers.",
     "- Topics must be DISTINCT from each other; avoid near-duplicates.",
     "- Keep titles SFW, broadly recognizable, and unambiguous.",
+    "- Avoid titles that combine 'FIFA' and 'World Cup' as promotional wording.",
   ].join("\n");
 }
 
 function buildTopicUserPrompt(opts: SuggestTopicsOptions): string {
   const flavour: Record<SuggestMode, string> = {
     live:
-      "engaging multiplayer trivia that works well for a live event with prizes — broadly recognizable, fun, fast",
+      "engaging, easy football-first multiplayer trivia for a live event with prizes — tied to match-day teams and countries",
     daily:
       "broadly engaging general-knowledge trivia for a wide daily-quiz audience — accessible, varied, fun",
     practice:

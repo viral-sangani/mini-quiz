@@ -51,6 +51,13 @@ export default function OnboardingWelcomePage() {
           >
             Terms &amp; Conditions
           </Link>
+          {" "}and{" "}
+          <Link
+            href="/privacy"
+            style={{ color: "var(--primary-shade)", fontWeight: 700 }}
+          >
+            Privacy Policy
+          </Link>
           .
         </p>
       </div>
