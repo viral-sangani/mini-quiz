@@ -77,7 +77,7 @@ export default function EditQuizPage({ params }: { params: { id: string } }) {
         {!quiz || !initial ? (
           <div style={{ color: "var(--a-ink-faint)" }}>Loading…</div>
         ) : (
-          <>
+          <div className="adm-form-shell">
             <Crumbs
               items={[
                 { label: "Home", href: "/overview" },
@@ -139,7 +139,7 @@ export default function EditQuizPage({ params }: { params: { id: string } }) {
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </>

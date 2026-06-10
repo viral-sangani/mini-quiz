@@ -139,6 +139,60 @@ body {
     @apply flex-1 overflow-auto;
     padding: 24px 32px;
   }
+  .adm-form-shell {
+    width: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  .adm-wizard-command {
+    @apply rounded-xl;
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--a-line);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 8px 24px rgba(31, 42, 68, 0.08);
+    backdrop-filter: blur(10px);
+  }
+  .adm-wizard-command-main {
+    min-width: 0;
+  }
+  .adm-wizard-step {
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--a-ink-faint);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .adm-wizard-actions {
+    @apply flex items-center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .adm-wizard-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 16px;
+    align-items: start;
+  }
+  .adm-wizard-stack {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .adm-wizard-preview {
+    align-self: flex-start;
+    position: sticky;
+    top: 88px;
+  }
 
   /* Page header */
   .adm-page-h {
@@ -405,6 +459,12 @@ body {
     border-bottom: 1px solid var(--a-line);
     margin-bottom: 16px;
   }
+  .adm-tabs--wizard {
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 0;
+    margin-bottom: 0;
+  }
   .adm-tab {
     padding: 10px 14px;
     font-size: 13px;
@@ -420,6 +480,37 @@ body {
   .adm-tab.active {
     color: var(--a-ink);
     border-bottom-color: var(--a-primary);
+  }
+  .adm-tabs--wizard .adm-tab {
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+  }
+  .adm-tabs--wizard .adm-tab.active {
+    background: var(--a-primary-tint);
+    border-color: var(--a-primary);
+  }
+
+  @media (max-width: 1080px) {
+    .adm-wizard-main {
+      grid-template-columns: 1fr;
+    }
+    .adm-wizard-preview {
+      position: static;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .adm-content {
+      padding: 18px 16px;
+    }
+    .adm-wizard-command {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .adm-wizard-actions {
+      justify-content: flex-end;
+    }
   }
 
   /* Filters bar */

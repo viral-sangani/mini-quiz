@@ -13,28 +13,30 @@ export default function NewQuizPage() {
     <>
       <TopBar title="Games" />
       <div className="adm-content">
-        <Crumbs
-          items={[
-            { label: "Home", href: "/overview" },
-            { label: "Games", href: "/quizzes" },
-            { label: "New" },
-          ]}
-        />
-        <div className="adm-page-h" style={{ marginTop: 8 }}>
-          <div>
-            <h1>Create a new game</h1>
+        <div className="adm-form-shell">
+          <Crumbs
+            items={[
+              { label: "Home", href: "/overview" },
+              { label: "Games", href: "/quizzes" },
+              { label: "New" },
+            ]}
+          />
+          <div className="adm-page-h" style={{ marginTop: 8 }}>
+            <div>
+              <h1>Create a new game</h1>
+            </div>
           </div>
+          <QuizForm
+            submitLabel="Create game"
+            onSubmit={async (v) => {
+              const data = await adminApi.post<{ quiz: AdminQuiz }>(
+                "/admin/quizzes",
+                v,
+              );
+              router.push(`/quizzes/${data.quiz.id}`);
+            }}
+          />
         </div>
-        <QuizForm
-          submitLabel="Create game"
-          onSubmit={async (v) => {
-            const data = await adminApi.post<{ quiz: AdminQuiz }>(
-              "/admin/quizzes",
-              v,
-            );
-            router.push(`/quizzes/${data.quiz.id}`);
-          }}
-        />
       </div>
     </>
   );

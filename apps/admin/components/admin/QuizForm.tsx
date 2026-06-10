@@ -521,18 +521,58 @@ export function QuizForm({
 
   return (
     <>
-      <div className="adm-tabs">
-        {TABS.map((id, i) => (
+      <div className="adm-wizard-command">
+        <div className="adm-wizard-command-main">
+          <div className="adm-wizard-step">
+            Step {tabIndex + 1} of {TABS.length}
+          </div>
+          <div className="adm-tabs adm-tabs--wizard">
+            {TABS.map((id, i) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => goToTab(id)}
+                disabled={tab === "basics" && id !== "basics" && scheduleMissing}
+                className={`adm-tab${tab === id ? " active" : ""}`}
+              >
+                {i + 1}. {id.charAt(0).toUpperCase() + id.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="adm-wizard-actions">
           <button
-            key={id}
             type="button"
-            onClick={() => goToTab(id)}
-            disabled={tab === "basics" && id !== "basics" && scheduleMissing}
-            className={`adm-tab${tab === id ? " active" : ""}`}
+            onClick={() => setAiOpen(true)}
+            className="adm-btn adm-btn--ai"
           >
-            {i + 1}. {id.charAt(0).toUpperCase() + id.slice(1)}
+            ✨ AI
           </button>
-        ))}
+          {tabIndex > 0 && (
+            <button type="button" onClick={goBack} className="adm-btn">
+              Back
+            </button>
+          )}
+          {tabIndex < TABS.length - 1 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={tab === "basics" && scheduleMissing}
+              className="adm-btn adm-btn--primary"
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={update}
+              disabled={submitting}
+              className="adm-btn adm-btn--primary"
+            >
+              {submitting ? "Saving…" : submitLabel}
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -544,8 +584,8 @@ export function QuizForm({
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="adm-wizard-main">
+        <div className="adm-wizard-stack">
           {tab === "basics" && (
             <>
               <div className="adm-card">
@@ -1172,55 +1212,6 @@ export function QuizForm({
         <PreviewCard v={v} totalPool={totalPool} />
       </div>
 
-      <div
-        className="adm-card"
-        style={{
-          marginTop: 16,
-          padding: 14,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--a-ink-soft)" }}>
-          Step {tabIndex + 1} of {TABS.length}
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            type="button"
-            onClick={() => setAiOpen(true)}
-            className="adm-btn adm-btn--ai"
-          >
-            ✨ AI
-          </button>
-          {tabIndex > 0 && (
-            <button type="button" onClick={goBack} className="adm-btn">
-              Back
-            </button>
-          )}
-          {tabIndex < TABS.length - 1 ? (
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={tab === "basics" && scheduleMissing}
-              className="adm-btn adm-btn--primary"
-            >
-              Next
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={update}
-              disabled={submitting}
-              className="adm-btn adm-btn--primary"
-            >
-              {submitting ? "Saving…" : submitLabel}
-            </button>
-          )}
-        </div>
-      </div>
-
       <AIQuestionGeneratorDialog
         open={aiOpen}
         mode="live"
@@ -1242,7 +1233,7 @@ function PreviewCard({
 }) {
   const cover = COVER_VAR[v.coverColor];
   return (
-    <div className="adm-card" style={{ alignSelf: "flex-start", position: "sticky", top: 16 }}>
+    <div className="adm-card adm-wizard-preview">
       <div className="adm-card-h">
         <h3>Player preview</h3>
       </div>
