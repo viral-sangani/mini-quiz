@@ -92,8 +92,8 @@ export default function HomePage() {
         <Image
           src="/football-championship-banner.png"
           alt="Football Championship"
-          width={337}
-          height={63}
+          width={1348}
+          height={252}
           priority
           sizes="(max-width: 720px) calc(100vw - 32px), 688px"
           style={{
