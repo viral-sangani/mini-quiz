@@ -12,7 +12,6 @@ import { MQCard } from "@/components/MQCard";
 import { Pill } from "@/components/Pill";
 import { StatChip } from "@/components/StatChip";
 import { api } from "@/lib/api-client";
-import { formatTokenAmount } from "@/lib/format";
 import { usePlayerCache } from "@/lib/player-cache";
 import { useProfile } from "@/lib/profile-context";
 import { formatLocal } from "@/lib/time";
@@ -248,6 +247,14 @@ function coverGradient(token: string | null | undefined) {
   return COVER_GRADIENT[token ?? "primary"] ?? COVER_GRADIENT.primary!;
 }
 
+function displayCeilAmount(value: number): string {
+  return String(Math.ceil(value));
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
   const phase = lobbyPhase({
     status: quiz.status,
@@ -263,7 +270,10 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
     (sum, a) => sum + Number(a || 0),
     0,
   );
-  const prizePoolLabel = formatTokenAmount(totalPool);
+  const prizePoolLabel = displayCeilAmount(totalPool);
+  const questionLabel = pluralize(quiz.questionCount, "question");
+  const lobbyLeadMinutes = Math.round(quiz.lobbyOpenLeadMs / 60_000);
+  const lobbyLeadLabel = `Lobby opens ${pluralize(lobbyLeadMinutes, "minute")} early`;
   const grad = coverGradient(quiz.coverColor);
 
   // Banner copy depends on phase.
@@ -278,7 +288,7 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
             : `${quiz.playersNeeded} more needed to start`
           : phase === "pre-lobby" && lobbyOpenMs
             ? `Lobby opens in ${formatMsLabel(lobbyOpenMs - now)}`
-            : `Scheduled · $${prizePoolLabel} ${quiz.payoutToken} pool`;
+            : "Scheduled";
 
   const cta = isLive ? "JOIN LIVE" : lobbyOpen ? "JOIN NOW" : "VIEW";
 
@@ -343,10 +353,25 @@ function FeaturedHero({ quiz, now }: { quiz: PublicQuiz; now: number }) {
           <div className="mq-h2" style={{ color: "white", fontSize: 22, marginBottom: 4 }}>
             {quiz.title}
           </div>
-          <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.92, marginBottom: 12 }}>
-            ${prizePoolLabel} {quiz.payoutToken} pool · {quiz.playerCount}/{quiz.minParticipants} joined
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 28,
+              fontWeight: 900,
+              lineHeight: 1,
+              marginBottom: 8,
+            }}
+          >
+            ${prizePoolLabel} prize pool
           </div>
-          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 10 }}>{subline}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.94, marginBottom: 4 }}>
+            {questionLabel}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 10 }}>
+            {phase === "pre-lobby" || phase === "lobby-open" || phase === "starting"
+              ? lobbyLeadLabel
+              : subline}
+          </div>
           <span
             style={{
               display: "inline-flex",
@@ -383,7 +408,8 @@ function UpNextRow({ quiz, now }: { quiz: PublicQuiz; now: number }) {
     (sum, a) => sum + Number(a || 0),
     0,
   );
-  const prizePoolLabel = formatTokenAmount(totalPool);
+  const prizePoolLabel = displayCeilAmount(totalPool);
+  const lobbyLeadMinutes = Math.round(quiz.lobbyOpenLeadMs / 60_000);
   const countdown =
     phase === "lobby-open" && startMs
       ? `Starts in ${formatMsLabel(startMs - now)}`
@@ -433,9 +459,10 @@ function UpNextRow({ quiz, now }: { quiz: PublicQuiz; now: number }) {
           </div>
           <div className="mq-body" style={{ fontSize: 12 }}>
             <span style={{ color: "var(--accent-shade)", fontWeight: 800 }}>
-              ${prizePoolLabel} {quiz.payoutToken}
+              ${prizePoolLabel} prize pool
             </span>{" "}
-            · {quiz.questionCount} questions
+            · {pluralize(quiz.questionCount, "question")} · lobby opens{" "}
+            {pluralize(lobbyLeadMinutes, "minute")} early
           </div>
         </div>
         <Pill style={{ fontSize: 11, padding: "6px 10px" }}>

@@ -288,6 +288,10 @@ function displayCeilAmount(value: number): string {
   return String(Math.ceil(value));
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function rowWinners(row: PrizeTierRow): number {
   const from = Number(row.from);
   const to = Number(row.to);
@@ -1238,6 +1242,8 @@ function PreviewCard({
 }) {
   const cover = COVER_VAR[v.coverColor];
   const displayTotalPool = displayCeilAmount(totalPool);
+  const questionLabel = pluralize(v.questions.length, "question");
+  const lobbyMinutes = Math.round(v.lobbyOpenLeadMs / 60_000);
   return (
     <div className="adm-card adm-wizard-preview">
       <div className="adm-card-h">
@@ -1282,11 +1288,22 @@ function PreviewCard({
           >
             {v.title || "Untitled game"}
           </div>
-          <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.9, marginBottom: 10 }}>
-            {v.questions.length} questions · {v.difficulty.charAt(0) + v.difficulty.slice(1).toLowerCase()} · ${displayTotalPool} pool
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: 24,
+              fontWeight: 900,
+              lineHeight: 1,
+              marginBottom: 8,
+            }}
+          >
+            ${displayTotalPool} prize pool
           </div>
-          <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.9, marginBottom: 10 }}>
-            Top {v.prizeAmounts.filter((a) => prizeNumber(a) > 0).length} paid · lobby opens {Math.round(v.lobbyOpenLeadMs / 60_000)}m early
+          <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.94, marginBottom: 4 }}>
+            {questionLabel}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.88, marginBottom: 12 }}>
+            Lobby opens {pluralize(lobbyMinutes, "minute")} early
           </div>
           <div
             style={{
