@@ -211,8 +211,8 @@ falls back to the DB aggregation path.
      `Payout` row at `APPROVED`.
    - The payout worker claims the quiz's approved rows and broadcasts them in
      nonce-managed windows from the treasury private key. Each winner still has
-     one ledger row and one transaction hash, but 500 payouts are sent as a
-     burst instead of 500 serialized worker commands. ERC-20 prize transfers
+     one ledger row and one transaction hash, but up to 1,000 payouts are sent
+     as nonce-managed windows instead of serialized worker commands. ERC-20 prize transfers
      omit `feeCurrency`, so gas is paid in CELO and exact USDT/USDC prize
      balances can be sent without the gas fee reducing that same token first.
    - On success: row → `CONFIRMED` with `txHash`.

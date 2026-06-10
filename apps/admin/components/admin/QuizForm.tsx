@@ -60,7 +60,34 @@ const LOBBY_PRESETS = [
   { label: "15 min", value: 15 * 60_000 },
   { label: "1 hour", value: 60 * 60_000 },
 ] as const;
-const MAX_PRIZE_RANKS = 500;
+const MAX_PRIZE_RANKS = 1000;
+
+type PrizeTierRow = {
+  id: string;
+  from: string;
+  to: string;
+  amount: string;
+};
+
+const DEFAULT_PRIZE_ROWS: Omit<PrizeTierRow, "id">[] = [
+  { from: "1", to: "1", amount: "25" },
+  { from: "2", to: "2", amount: "15" },
+  { from: "3", to: "3", amount: "5" },
+  { from: "4", to: "100", amount: "0.30" },
+  { from: "101", to: "200", amount: "0.10" },
+  { from: "201", to: "500", amount: "0.05" },
+];
+
+let prizeTierIdCounter = 0;
+
+function newPrizeTierId(): string {
+  prizeTierIdCounter += 1;
+  return `prize-tier-${prizeTierIdCounter}`;
+}
+
+function withPrizeRowIds(rows: Omit<PrizeTierRow, "id">[]): PrizeTierRow[] {
+  return rows.map((row) => ({ ...row, id: newPrizeTierId() }));
+}
 
 function defaultValue(): QuizFormValue {
   return {
@@ -68,7 +95,7 @@ function defaultValue(): QuizFormValue {
     description: "",
     scheduledStartLocal: "",
     questionTimeMs: 15_000,
-    prizeAmounts: ["50", "25", "15", "5", "5", "5", "5", "5", "5", "5"],
+    prizeAmounts: prizeRowsToAmounts(withPrizeRowIds(DEFAULT_PRIZE_ROWS)).amounts,
     minParticipants: 1,
     lobbyOpenLeadMs: 5 * 60_000,
     difficulty: "MEDIUM",
@@ -162,23 +189,6 @@ function resizePrizes(amounts: string[], count: number): string[] {
   return next;
 }
 
-function applyPrizeRange(
-  amounts: string[],
-  fromRaw: string,
-  toRaw: string,
-  amountRaw: string,
-): string[] | null {
-  const amount = normalizePrizeAmount(amountRaw);
-  if (amount == null) return null;
-  const from = clampRank(fromRaw, 1);
-  const to = clampRank(toRaw, from);
-  const start = Math.min(from, to);
-  const end = Math.max(from, to);
-  const next = resizePrizes(amounts, Math.max(amounts.length, end));
-  for (let i = start - 1; i <= end - 1; i++) next[i] = amount;
-  return next;
-}
-
 function compressPrizeAmounts(amounts: string[]): PrizeTier[] {
   const tiers: PrizeTier[] = [];
   for (let i = 0; i < amounts.length; i++) {
@@ -201,6 +211,90 @@ function compressPrizeAmounts(amounts: string[]): PrizeTier[] {
   return tiers;
 }
 
+function prizeRowsToAmounts(rows: PrizeTierRow[]): {
+  amounts: string[];
+  error: string | null;
+} {
+  if (rows.length === 0) return { amounts: [], error: "Add at least one reward row" };
+
+  const parsed = rows
+    .map((row, index) => {
+      const from = Number(row.from);
+      const to = Number(row.to);
+      const amount = normalizePrizeAmount(row.amount);
+      return { row, index, from, to, amount };
+    })
+    .sort((a, b) => a.from - b.from || a.to - b.to || a.index - b.index);
+
+  let maxTo = 0;
+  const occupied = new Set<number>();
+  for (const item of parsed) {
+    if (
+      !Number.isInteger(item.from) ||
+      !Number.isInteger(item.to) ||
+      item.from < 1 ||
+      item.to < 1 ||
+      item.from > MAX_PRIZE_RANKS ||
+      item.to > MAX_PRIZE_RANKS
+    ) {
+      return {
+        amounts: [],
+        error: `Row ${item.index + 1}: ranks must be whole numbers from 1 to ${MAX_PRIZE_RANKS}`,
+      };
+    }
+    if (item.from > item.to) {
+      return {
+        amounts: [],
+        error: `Row ${item.index + 1}: start rank must be before end rank`,
+      };
+    }
+    if (item.amount == null) {
+      return {
+        amounts: [],
+        error: `Row ${item.index + 1}: reward must be a non-negative number`,
+      };
+    }
+    for (let rank = item.from; rank <= item.to; rank++) {
+      if (occupied.has(rank)) {
+        return {
+          amounts: [],
+          error: `Row ${item.index + 1}: rank #${rank} is already covered by another row`,
+        };
+      }
+      occupied.add(rank);
+    }
+    maxTo = Math.max(maxTo, item.to);
+  }
+
+  const amounts = Array.from({ length: maxTo }, () => "0");
+  for (const item of parsed) {
+    for (let rank = item.from; rank <= item.to; rank++) {
+      amounts[rank - 1] = item.amount!;
+    }
+  }
+  return { amounts, error: null };
+}
+
+function prizeRowsFromAmounts(amounts: string[]): PrizeTierRow[] {
+  return compressPrizeAmounts(amounts).map((tier) => ({
+    id: newPrizeTierId(),
+    from: String(tier.from),
+    to: String(tier.to),
+    amount: tier.amount,
+  }));
+}
+
+function rowWinners(row: PrizeTierRow): number {
+  const from = Number(row.from);
+  const to = Number(row.to);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from > to) return 0;
+  return to - from + 1;
+}
+
+function rowSubtotal(row: PrizeTierRow): number {
+  return rowWinners(row) * prizeNumber(row.amount);
+}
+
 export function QuizForm({
   initial,
   submitLabel = "Save",
@@ -217,20 +311,18 @@ export function QuizForm({
   const [aiDraft, setAiDraft] = useState<AIGenerationContext | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [winnerCountDraft, setWinnerCountDraft] = useState(
-    String(initialValue.prizeAmounts.length),
+  const [prizeRows, setPrizeRows] = useState(() =>
+    prizeRowsFromAmounts(initialValue.prizeAmounts),
   );
-  const [rangeDraft, setRangeDraft] = useState({
-    from: "1",
-    to: "50",
-    amount: initialValue.prizeAmounts[0] ?? "0",
-  });
-  const [rankDraft, setRankDraft] = useState({
-    rank: "1",
-    amount: initialValue.prizeAmounts[0] ?? "0",
-  });
+  const [prizePlanError, setPrizePlanError] = useState<string | null>(null);
 
   const patch = (p: Partial<QuizFormValue>) => setV((prev) => ({ ...prev, ...p }));
+  const syncPrizeRows = (nextRows: PrizeTierRow[]) => {
+    setPrizeRows(nextRows);
+    const parsed = prizeRowsToAmounts(nextRows);
+    setPrizePlanError(parsed.error);
+    if (!parsed.error) patch({ prizeAmounts: parsed.amounts });
+  };
   const tabIndex = TABS.indexOf(tab);
   const scheduleMissing = !v.scheduledStartLocal.trim();
   const requireScheduleBeforeLeavingBasics = (nextTab: QuizFormTab): boolean => {
@@ -295,19 +387,26 @@ export function QuizForm({
       setError("Add at least one question");
       return;
     }
-    if (v.prizeAmounts.length < 1 || v.prizeAmounts.length > MAX_PRIZE_RANKS) {
+    const parsedPrizePlan = prizeRowsToAmounts(prizeRows);
+    if (parsedPrizePlan.error) {
+      setTab("prizes");
+      setError(parsedPrizePlan.error);
+      return;
+    }
+    const prizeAmounts = parsedPrizePlan.amounts;
+    if (prizeAmounts.length < 1 || prizeAmounts.length > MAX_PRIZE_RANKS) {
       setTab("prizes");
       setError(`Prize plan must include between 1 and ${MAX_PRIZE_RANKS} ranks`);
       return;
     }
-    for (let i = 0; i < v.prizeAmounts.length; i++) {
-      if (normalizePrizeAmount(v.prizeAmounts[i] ?? "") == null) {
+    for (let i = 0; i < prizeAmounts.length; i++) {
+      if (normalizePrizeAmount(prizeAmounts[i] ?? "") == null) {
         setTab("prizes");
         setError(`Rank ${i + 1}: reward must be a non-negative number`);
         return;
       }
       const decimals = getPayoutToken(v.payoutToken).decimals;
-      if (prizeDecimalPlaces(v.prizeAmounts[i] ?? "") > decimals) {
+      if (prizeDecimalPlaces(prizeAmounts[i] ?? "") > decimals) {
         setTab("prizes");
         setError(
           `Rank ${i + 1}: ${v.payoutToken} rewards support at most ${decimals} decimal places`,
@@ -344,7 +443,7 @@ export function QuizForm({
           ? localDatetimeInputToIsoUtc(v.scheduledStartLocal)
           : null,
         questionTimeMs: v.questionTimeMs,
-        prizeAmounts: v.prizeAmounts.map((s) => s.trim()).filter(Boolean),
+        prizeAmounts: prizeAmounts.map((s) => s.trim()),
         minParticipants: Math.max(1, Math.floor(v.minParticipants)),
         lobbyOpenLeadMs: v.lobbyOpenLeadMs,
         difficulty: v.difficulty,
@@ -370,6 +469,19 @@ export function QuizForm({
   const prizeTiers = useMemo(
     () => compressPrizeAmounts(v.prizeAmounts),
     [v.prizeAmounts],
+  );
+  const sortedPrizeRows = useMemo(
+    () =>
+      [...prizeRows].sort(
+        (a, b) =>
+          Number(a.from || 0) - Number(b.from || 0) ||
+          Number(a.to || 0) - Number(b.to || 0),
+      ),
+    [prizeRows],
+  );
+  const maxPrizeRank = useMemo(
+    () => Math.max(0, ...prizeRows.map((row) => Number(row.to) || 0)),
+    [prizeRows],
   );
   const paidRanks = useMemo(
     () => v.prizeAmounts.filter((a) => prizeNumber(a) > 0).length,
@@ -809,226 +921,200 @@ export function QuizForm({
 
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "160px 1fr",
-                    gap: 14,
-                    alignItems: "stretch",
-                    marginBottom: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 10,
                   }}
                 >
                   <div
                     style={{
-                      border: "1px solid var(--a-line)",
-                      borderRadius: 8,
-                      padding: 12,
-                      background: "var(--a-bg)",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "var(--a-ink-soft)",
                     }}
                   >
-                    <div className="adm-field">
-                      <label>Winner slots (1-500)</label>
-                      <input
-                        className="adm-input"
-                        type="number"
-                        min={1}
-                        max={MAX_PRIZE_RANKS}
-                        value={winnerCountDraft}
-                        onChange={(e) => setWinnerCountDraft(e.target.value)}
-                      />
-                    </div>
+                    Highest paid rank: #{maxPrizeRank || 0} · Max {MAX_PRIZE_RANKS}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      className="adm-btn adm-btn--sm"
+                      onClick={() => {
+                        const rows = withPrizeRowIds(DEFAULT_PRIZE_ROWS);
+                        syncPrizeRows(rows);
+                        setError(null);
+                      }}
+                    >
+                      Use $100 default
+                    </button>
                     <button
                       type="button"
                       className="adm-btn adm-btn--sm adm-btn--primary"
-                      style={{ marginTop: 10, width: "100%" }}
+                      disabled={maxPrizeRank >= MAX_PRIZE_RANKS}
                       onClick={() => {
-                        const count = clampRank(winnerCountDraft, v.prizeAmounts.length);
-                        patch({ prizeAmounts: resizePrizes(v.prizeAmounts, count) });
-                        setWinnerCountDraft(String(count));
+                        const from = Math.min(MAX_PRIZE_RANKS, maxPrizeRank + 1 || 1);
+                        const to = Math.min(MAX_PRIZE_RANKS, from + 99);
+                        const lastAmount =
+                          sortedPrizeRows[sortedPrizeRows.length - 1]?.amount ?? "0.05";
+                        syncPrizeRows([
+                          ...prizeRows,
+                          {
+                            id: newPrizeTierId(),
+                            from: String(from),
+                            to: String(to),
+                            amount: lastAmount,
+                          },
+                        ]);
+                        setError(null);
                       }}
                     >
-                      Resize plan
+                      Add range
                     </button>
                   </div>
+                </div>
 
+                {prizePlanError && (
                   <div
+                    className="rounded-md px-3 py-2 text-sm"
                     style={{
-                      border: "1px solid var(--a-line)",
-                      borderRadius: 8,
-                      padding: 12,
-                      background: "white",
+                      background: "var(--a-wrong-tint)",
+                      color: "var(--a-wrong)",
+                      marginBottom: 10,
                     }}
                   >
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(4, minmax(0, 1fr)) auto",
-                        gap: 8,
-                        alignItems: "end",
-                      }}
-                    >
-                      <div className="adm-field">
-                        <label>From rank</label>
-                        <input
-                          className="adm-input"
-                          type="number"
-                          min={1}
-                          max={MAX_PRIZE_RANKS}
-                          value={rangeDraft.from}
-                          onChange={(e) =>
-                            setRangeDraft((prev) => ({ ...prev, from: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div className="adm-field">
-                        <label>To rank</label>
-                        <input
-                          className="adm-input"
-                          type="number"
-                          min={1}
-                          max={MAX_PRIZE_RANKS}
-                          value={rangeDraft.to}
-                          onChange={(e) =>
-                            setRangeDraft((prev) => ({ ...prev, to: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div className="adm-field" style={{ gridColumn: "span 2" }}>
-                        <label>Amount per rank</label>
-                        <input
-                          className="adm-input"
-                          inputMode="decimal"
-                          value={rangeDraft.amount}
-                          onChange={(e) =>
-                            setRangeDraft((prev) => ({ ...prev, amount: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="adm-btn adm-btn--sm adm-btn--primary"
-                        onClick={() => {
-                          const next = applyPrizeRange(
-                            v.prizeAmounts,
-                            rangeDraft.from,
-                            rangeDraft.to,
-                            rangeDraft.amount,
-                          );
-                          if (!next) {
-                            setError("Range amount must be a non-negative number");
-                            return;
-                          }
-                          patch({ prizeAmounts: next });
-                          setWinnerCountDraft(String(next.length));
-                          setError(null);
-                        }}
-                      >
-                        Apply range
-                      </button>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(3, minmax(0, 1fr)) auto",
-                        gap: 8,
-                        alignItems: "end",
-                        marginTop: 12,
-                        paddingTop: 12,
-                        borderTop: "1px solid var(--a-line-soft)",
-                      }}
-                    >
-                      <div className="adm-field">
-                        <label>Exact rank</label>
-                        <input
-                          className="adm-input"
-                          type="number"
-                          min={1}
-                          max={MAX_PRIZE_RANKS}
-                          value={rankDraft.rank}
-                          onChange={(e) =>
-                            setRankDraft((prev) => ({ ...prev, rank: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div className="adm-field" style={{ gridColumn: "span 2" }}>
-                        <label>Override amount</label>
-                        <input
-                          className="adm-input"
-                          inputMode="decimal"
-                          value={rankDraft.amount}
-                          onChange={(e) =>
-                            setRankDraft((prev) => ({ ...prev, amount: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="adm-btn adm-btn--sm"
-                        onClick={() => {
-                          const rank = clampRank(rankDraft.rank, 1);
-                          const next = applyPrizeRange(
-                            v.prizeAmounts,
-                            String(rank),
-                            String(rank),
-                            rankDraft.amount,
-                          );
-                          if (!next) {
-                            setError("Rank amount must be a non-negative number");
-                            return;
-                          }
-                          patch({ prizeAmounts: next });
-                          setWinnerCountDraft(String(next.length));
-                          setError(null);
-                        }}
-                      >
-                        Set rank
-                      </button>
-                    </div>
+                    {prizePlanError}
                   </div>
-                </div>
+                )}
 
                 <div className="adm-card" style={{ borderRadius: 8, overflow: "hidden" }}>
                   <table className="adm-table">
                     <thead>
                       <tr>
-                        <th>Ranks</th>
+                        <th>Start rank</th>
+                        <th>End rank</th>
+                        <th className="num">Reward</th>
                         <th className="num">Winners</th>
-                        <th className="num">Each</th>
                         <th className="num">Subtotal</th>
                         <th></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {prizeTiers.map((tier) => (
-                        <tr key={`${tier.from}-${tier.to}-${tier.amount}`}>
-                          <td style={{ fontWeight: 800 }}>
-                            {tier.from === tier.to
-                              ? `#${tier.from}`
-                              : `#${tier.from} - #${tier.to}`}
-                          </td>
-                          <td className="num">{tier.count}</td>
-                          <td className="num">
-                            {tier.amount} {v.payoutToken}
-                          </td>
-                          <td className="num" style={{ fontWeight: 800 }}>
-                            {Number(tier.subtotal.toFixed(6))} {v.payoutToken}
-                          </td>
-                          <td className="text-right">
-                            <button
-                              type="button"
-                              className="adm-btn adm-btn--sm"
-                              onClick={() => {
-                                setRangeDraft({
-                                  from: String(tier.from),
-                                  to: String(tier.to),
-                                  amount: tier.amount,
-                                });
-                              }}
-                            >
-                              Edit range
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {sortedPrizeRows.map((row, rowIndex) => {
+                        const nextRow = sortedPrizeRows[rowIndex + 1];
+                        const insertFrom = (Number(row.to) || 0) + 1;
+                        const insertLimit = nextRow
+                          ? (Number(nextRow.from) || insertFrom) - 1
+                          : MAX_PRIZE_RANKS;
+                        const canAddAfter =
+                          Number.isInteger(insertFrom) &&
+                          insertFrom >= 1 &&
+                          insertFrom <= insertLimit &&
+                          insertFrom <= MAX_PRIZE_RANKS;
+                        return (
+                          <tr key={row.id}>
+                            <td>
+                              <input
+                                className="adm-input"
+                                type="number"
+                                min={1}
+                                max={MAX_PRIZE_RANKS}
+                                value={row.from}
+                                onChange={(e) => {
+                                  syncPrizeRows(
+                                    prizeRows.map((r) =>
+                                      r.id === row.id
+                                        ? { ...r, from: e.target.value }
+                                        : r,
+                                    ),
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="adm-input"
+                                type="number"
+                                min={1}
+                                max={MAX_PRIZE_RANKS}
+                                value={row.to}
+                                onChange={(e) => {
+                                  syncPrizeRows(
+                                    prizeRows.map((r) =>
+                                      r.id === row.id ? { ...r, to: e.target.value } : r,
+                                    ),
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td className="num">
+                              <input
+                                className="adm-input"
+                                inputMode="decimal"
+                                value={row.amount}
+                                onChange={(e) => {
+                                  syncPrizeRows(
+                                    prizeRows.map((r) =>
+                                      r.id === row.id
+                                        ? { ...r, amount: e.target.value }
+                                        : r,
+                                    ),
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td className="num">{rowWinners(row)}</td>
+                            <td className="num" style={{ fontWeight: 800 }}>
+                              {Number(rowSubtotal(row).toFixed(6))} {v.payoutToken}
+                            </td>
+                            <td className="text-right">
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "flex-end",
+                                  gap: 6,
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="adm-btn adm-btn--sm"
+                                  disabled={!canAddAfter}
+                                  onClick={() => {
+                                    const insertTo = Math.min(insertLimit, insertFrom + 99);
+                                    const newRow = {
+                                      id: newPrizeTierId(),
+                                      from: String(insertFrom),
+                                      to: String(insertTo),
+                                      amount: row.amount,
+                                    };
+                                    const nextRows = [...prizeRows];
+                                    const sourceIndex = nextRows.findIndex(
+                                      (r) => r.id === row.id,
+                                    );
+                                    nextRows.splice(sourceIndex + 1, 0, newRow);
+                                    syncPrizeRows(nextRows);
+                                    setError(null);
+                                  }}
+                                >
+                                  Add after
+                                </button>
+                                <button
+                                  type="button"
+                                  className="adm-btn adm-btn--sm"
+                                  disabled={prizeRows.length <= 1}
+                                  onClick={() => {
+                                    syncPrizeRows(prizeRows.filter((r) => r.id !== row.id));
+                                    setError(null);
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

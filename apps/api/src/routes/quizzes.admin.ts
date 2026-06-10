@@ -25,7 +25,7 @@ const questionSchema = z.object({
   choices: z.array(choiceSchema).min(2).max(6),
   correctChoiceId: z.string().min(1),
 });
-const MAX_PRIZE_RANKS = 500;
+const MAX_PRIZE_RANKS = 1000;
 const prizeAmountSchema = z
   .string()
   .trim()
