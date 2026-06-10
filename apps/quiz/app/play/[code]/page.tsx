@@ -112,6 +112,17 @@ function PlayInner() {
   const walletAddress =
     authState.status === "ready" ? authState.walletAddress : null;
   const profile = authState.status === "ready" ? authState.profile : null;
+  const activeProfile =
+    authState.status === "ready" || authState.status === "needs-onboarding"
+      ? authState.profile
+      : null;
+  const hasRequiredUsername = !!activeProfile?.username;
+  const onboardingRedirectPath =
+    activeProfile?.displayName &&
+    activeProfile.avatarEmoji &&
+    activeProfile.avatarColor
+      ? "/onboarding/username"
+      : "/onboarding";
 
   const pageUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -146,6 +157,10 @@ function PlayInner() {
       return;
     }
     if (authState.status === "needs-onboarding") {
+      setPhase("needs_onboarding");
+      return;
+    }
+    if (!hasRequiredUsername) {
       setPhase("needs_onboarding");
       return;
     }
@@ -189,7 +204,7 @@ function PlayInner() {
     return () => {
       cancelled = true;
     };
-  }, [authState.status, code]);
+  }, [authState.status, code, hasRequiredUsername]);
 
   // While in pre_lobby, watch the clock and flip to joining once the lobby opens.
   useEffect(() => {
@@ -564,7 +579,7 @@ function PlayInner() {
   if (phase === "gate") return <MiniPayGate targetUrl={pageUrl} />;
   if (phase === "needs_onboarding") {
     // Redirect; render a loader meanwhile.
-    if (typeof window !== "undefined") router.replace("/profile?complete=1");
+    if (typeof window !== "undefined") router.replace(onboardingRedirectPath);
     return <BootingScreen />;
   }
   if (phase === "room_missing") return <RoomMissing code={code} message={errorMsg} />;
