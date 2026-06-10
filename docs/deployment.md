@@ -170,7 +170,7 @@ must be running to decrypt them, but Argo retries until it succeeds.
 
 ## Vercel projects
 
-Two projects, both under team `viral-sanganis-projects-d6d25698`. Both
+Two projects, both under team `minipay-celo-s-projects`. Both
 deploy from the **repo root** (CLI run from `mini-quiz/`); each project
 has `rootDirectory` set so Vercel scopes the build to its subdir.
 
@@ -197,11 +197,11 @@ has `rootDirectory` set so Vercel scopes the build to its subdir.
 
 ```bash
 # From the repo root, link to the right project, then deploy:
-echo '{"projectId":"prj_RqikSLgHIAcUb9DvCvrPMetcBpK4","orgId":"team_H2565VzmcSsgDCQ6jzUSbo8x","projectName":"mini-quiz"}' > .vercel/project.json
+echo '{"projectId":"prj_dFhm5tHtPh3FvZMMpsfQGh73TYNn","orgId":"team_AnkZ1WNZsQPRDSzhv7JpDpzv","projectName":"mini-quiz"}' > .vercel/project.json
 vercel --prod --yes      # quiz
 
 # To switch to admin:
-echo '{"projectId":"prj_Tq79B9zywjLVjdVeS1AUnk4YiUX5","orgId":"team_H2565VzmcSsgDCQ6jzUSbo8x","projectName":"mini-quiz-admin"}' > .vercel/project.json
+echo '{"projectId":"prj_9j6Ed4GMLJwNQUuLVCQf8rf5gKoF","orgId":"team_AnkZ1WNZsQPRDSzhv7JpDpzv","projectName":"mini-quiz-admin"}' > .vercel/project.json
 vercel --prod --yes      # admin
 ```
 
