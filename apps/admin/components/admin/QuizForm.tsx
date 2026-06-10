@@ -284,6 +284,10 @@ function prizeRowsFromAmounts(amounts: string[]): PrizeTierRow[] {
   }));
 }
 
+function displayCeilAmount(value: number): string {
+  return String(Math.ceil(value));
+}
+
 function rowWinners(row: PrizeTierRow): number {
   const from = Number(row.from);
   const to = Number(row.to);
@@ -466,6 +470,7 @@ export function QuizForm({
     .map((a) => Number(a))
     .filter((n) => Number.isFinite(n))
     .reduce((a, b) => a + b, 0);
+  const displayTotalPool = displayCeilAmount(totalPool);
   const prizeTiers = useMemo(
     () => compressPrizeAmounts(v.prizeAmounts),
     [v.prizeAmounts],
@@ -919,7 +924,7 @@ export function QuizForm({
               <div className="adm-card-h">
                 <h3>Prize pool ({v.payoutToken})</h3>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "var(--a-ink-soft)" }}>
-                  {paidRanks} paid ranks · Total: {Number(totalPool.toFixed(6))} {v.payoutToken}
+                  {paidRanks} paid ranks · Total: {displayTotalPool} {v.payoutToken}
                 </div>
               </div>
               <div style={{ padding: 18 }}>
@@ -1202,7 +1207,7 @@ export function QuizForm({
                 <ReviewRow label="Questions" value={String(v.questions.length)} />
                 <ReviewRow
                   label="Pool ranks"
-                  value={`${paidRanks}/${v.prizeAmounts.length} paid (total $${Number(totalPool.toFixed(6))})`}
+                  value={`${paidRanks}/${v.prizeAmounts.length} paid (total $${displayTotalPool})`}
                 />
               </div>
             </div>
@@ -1232,6 +1237,7 @@ function PreviewCard({
   totalPool: number;
 }) {
   const cover = COVER_VAR[v.coverColor];
+  const displayTotalPool = displayCeilAmount(totalPool);
   return (
     <div className="adm-card adm-wizard-preview">
       <div className="adm-card-h">
@@ -1277,7 +1283,7 @@ function PreviewCard({
             {v.title || "Untitled game"}
           </div>
           <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.9, marginBottom: 10 }}>
-            {v.questions.length} questions · {v.difficulty.charAt(0) + v.difficulty.slice(1).toLowerCase()} · ${Number(totalPool.toFixed(6))} pool
+            {v.questions.length} questions · {v.difficulty.charAt(0) + v.difficulty.slice(1).toLowerCase()} · ${displayTotalPool} pool
           </div>
           <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.9, marginBottom: 10 }}>
             Top {v.prizeAmounts.filter((a) => prizeNumber(a) > 0).length} paid · lobby opens {Math.round(v.lobbyOpenLeadMs / 60_000)}m early

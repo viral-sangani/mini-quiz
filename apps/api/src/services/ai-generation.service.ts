@@ -43,6 +43,8 @@ const questionItemSchema = z.object({
 const responseEnvelopeSchema = z.object({
   questions: z.array(questionItemSchema).min(1).max(20),
 });
+const QUESTION_TIMEOUT_MS = 40_000;
+const TOPIC_TIMEOUT_MS = 30_000;
 
 function makeQuestionResponseJsonSchema(withExplanations: boolean): object {
   const itemProperties = {
@@ -236,6 +238,10 @@ async function callOpenRouter(args: {
     model: config.OPENROUTER_MODEL,
     temperature: 0.3,
     max_tokens: args.maxTokens,
+    reasoning: {
+      effort: "minimal",
+      exclude: true,
+    },
     response_format: makeResponseFormat(
       responseFormatMode,
       args.responseName,
@@ -317,8 +323,7 @@ async function attemptGeneration(
   const maxTokens = Math.min(4_000, 400 + opts.count * perQuestion);
 
   const ac = new AbortController();
-  const TIMEOUT_MS = 90_000;
-  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), QUESTION_TIMEOUT_MS);
 
   let text = "";
   let finishReason = "unknown";
@@ -335,7 +340,7 @@ async function attemptGeneration(
     finishReason = result.finishReason;
   } catch (e) {
     if ((e as Error).name === "AbortError") {
-      throw new Error(`OpenRouter call timed out after ${TIMEOUT_MS}ms`);
+      throw new Error(`OpenRouter call timed out after ${QUESTION_TIMEOUT_MS}ms`);
     }
     throw e;
   } finally {
@@ -491,8 +496,7 @@ async function attemptTopicSuggestion(
 ): Promise<SuggestedTopic[]> {
   const maxTokens = Math.min(2_000, 200 + opts.count * 80);
   const ac = new AbortController();
-  const TIMEOUT_MS = 60_000;
-  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), TOPIC_TIMEOUT_MS);
 
   let text = "";
   try {
@@ -507,7 +511,7 @@ async function attemptTopicSuggestion(
     text = res.text;
   } catch (e) {
     if ((e as Error).name === "AbortError") {
-      throw new Error(`OpenRouter call timed out after ${TIMEOUT_MS}ms`);
+      throw new Error(`OpenRouter call timed out after ${TOPIC_TIMEOUT_MS}ms`);
     }
     throw e;
   } finally {
