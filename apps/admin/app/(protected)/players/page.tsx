@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AdminUser } from "@mini-quiz/shared";
 import { adminApi } from "@/lib/admin-api";
 import { TopBar } from "@/components/TopBar";
@@ -13,34 +13,59 @@ import { CustomPill } from "@/components/StatusPill";
 import { FlagUserDialog } from "@/components/FlagUserDialog";
 import { formatLocal } from "@/lib/time";
 
-type Filter = "all" | "flagged" | "admins";
+type Filter = "all" | "flagged";
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "admins", label: "Admins" },
   { id: "flagged", label: "Flagged" },
 ];
+
+const PAGE_SIZE = 10;
+
+type UsersResponse = {
+  users: AdminUser[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
 
 export default function PlayersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flagFor, setFlagFor] = useState<AdminUser | null>(null);
   const toast = useToast();
 
-  const load = async (opts?: { filter?: Filter; search?: string }) => {
+  const load = async (opts?: { filter?: Filter; search?: string; page?: number }) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      const eff = opts ?? { filter, search };
+      const eff = opts ?? { filter, search, page };
       if (eff.search) params.set("q", eff.search);
       if (eff.filter === "flagged") params.set("flagged", "true");
-      const data = await adminApi.get<{ users: AdminUser[] }>(
+      params.set("role", "USER");
+      params.set("page", String(eff.page ?? page));
+      params.set("limit", String(PAGE_SIZE));
+      const data = await adminApi.get<UsersResponse>(
         `/admin/users${params.toString() ? `?${params}` : ""}`,
       );
       setUsers(data.users);
+      setPagination({
+        page: data.page,
+        limit: data.limit,
+        total: data.total,
+        totalPages: data.totalPages,
+      });
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
@@ -50,24 +75,23 @@ export default function PlayersPage() {
   };
 
   useEffect(() => {
-    void load({ filter, search });
+    void load({ filter, search, page });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, page]);
 
-  const visibleUsers = useMemo(() => {
-    if (filter === "admins") return users.filter((u) => u.role === "ADMIN");
-    return users;
-  }, [users, filter]);
-
-  const totalPlayers = users.length;
+  const totalPlayers = pagination.total;
   const flaggedCount = users.filter((u) => u.flagged).length;
-  const adminCount = users.filter((u) => u.role === "ADMIN").length;
+  const withWalletCount = users.filter((u) => u.walletAddress).length;
+  const rangeStart = totalPlayers === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
+  const rangeEnd = Math.min(totalPlayers, rangeStart + users.length - 1);
+  const canGoPrev = pagination.page > 1;
+  const canGoNext = pagination.page < pagination.totalPages;
 
   const promote = async (id: string, role: "USER" | "ADMIN") => {
     try {
       await adminApi.patch(`/admin/users/${id}/role`, { role });
       toast.success(role === "ADMIN" ? "Promoted to admin" : "Demoted to user");
-      await load();
+      await load({ filter, search, page });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Role update failed";
       setError(msg);
@@ -80,7 +104,7 @@ export default function PlayersPage() {
       await adminApi.post(`/admin/users/${id}/flag`, { reason });
       toast.success("Player flagged");
       setFlagFor(null);
-      await load();
+      await load({ filter, search, page });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Flag failed";
       setError(msg);
@@ -92,7 +116,7 @@ export default function PlayersPage() {
     try {
       await adminApi.post(`/admin/users/${id}/unflag`);
       toast.success("Player unflagged");
-      await load();
+      await load({ filter, search, page });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unflag failed";
       setError(msg);
@@ -114,7 +138,11 @@ export default function PlayersPage() {
     try {
       await adminApi.del(`/admin/users/${u.id}`);
       toast.success(`Deleted ${label}`);
-      await load();
+      if (users.length === 1 && page > 1) {
+        setPage((p) => p - 1);
+      } else {
+        await load({ filter, search, page });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Delete failed";
       setError(msg);
@@ -136,23 +164,24 @@ export default function PlayersPage() {
           <div>
             <h1>Players</h1>
             <div className="adm-crumbs">
-              {totalPlayers} loaded · {adminCount} admins · {flaggedCount} flagged
+              Showing {rangeStart.toLocaleString()}-{rangeEnd.toLocaleString()} of{" "}
+              {totalPlayers.toLocaleString()} player accounts
             </div>
           </div>
         </div>
 
         <KpiGrid>
-          <KpiCard label="Total" value={totalPlayers.toLocaleString()} />
-          <KpiCard label="Admins" value={adminCount} />
+          <KpiCard label="Total matches" value={totalPlayers.toLocaleString()} />
+          <KpiCard label="Loaded" value={users.length} delta={`${PAGE_SIZE} per page`} />
           <KpiCard
-            label="Flagged"
+            label="Flagged loaded"
             value={flaggedCount}
             tone={flaggedCount > 0 ? "down" : "up"}
             delta={flaggedCount > 0 ? "Review needed" : "All clear"}
           />
           <KpiCard
-            label="With wallet"
-            value={users.filter((u) => u.walletAddress).length}
+            label="Wallets loaded"
+            value={withWalletCount}
           />
         </KpiGrid>
 
@@ -161,7 +190,10 @@ export default function PlayersPage() {
             <button
               key={f.id}
               className={`adm-chip${filter === f.id ? " active" : ""}`}
-              onClick={() => setFilter(f.id)}
+              onClick={() => {
+                setFilter(f.id);
+                setPage(1);
+              }}
             >
               {f.label}
             </button>
@@ -170,7 +202,11 @@ export default function PlayersPage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void load({ filter, search });
+              if (page === 1) {
+                void load({ filter, search, page: 1 });
+              } else {
+                setPage(1);
+              }
             }}
             className="adm-search"
             style={{ maxWidth: 280 }}
@@ -226,14 +262,14 @@ export default function PlayersPage() {
                     Loading…
                   </td>
                 </tr>
-              ) : visibleUsers.length === 0 ? (
+              ) : users.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center" style={{ color: "var(--a-ink-faint)", padding: 24 }}>
                     No players match.
                   </td>
                 </tr>
               ) : (
-                visibleUsers.map((u) => (
+                users.map((u) => (
                   <tr key={u.id}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -305,6 +341,36 @@ export default function PlayersPage() {
               )}
             </tbody>
           </table>
+          <div
+            style={{
+              alignItems: "center",
+              borderTop: "1px solid var(--a-border)",
+              display: "flex",
+              gap: 10,
+              justifyContent: "space-between",
+              padding: "12px 14px",
+            }}
+          >
+            <div style={{ color: "var(--a-ink-faint)", fontSize: 12, fontWeight: 700 }}>
+              Page {pagination.page.toLocaleString()} of {pagination.totalPages.toLocaleString()}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="adm-btn adm-btn--sm"
+                disabled={!canGoPrev || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <button
+                className="adm-btn adm-btn--sm"
+                disabled={!canGoNext || loading}
+                onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

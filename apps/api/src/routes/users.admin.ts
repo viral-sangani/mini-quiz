@@ -2,10 +2,17 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AdminUser } from "@mini-quiz/shared";
 import { requireAdmin } from "../auth.js";
-import { prisma } from "../db.js";
+import { Prisma, prisma } from "../db.js";
 
 const roleSchema = z.object({ role: z.enum(["USER", "ADMIN"]) });
 const flagSchema = z.object({ reason: z.string().min(1).max(500) });
+const listUsersQuerySchema = z.object({
+  q: z.string().optional(),
+  flagged: z.enum(["true", "false"]).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  role: z.enum(["USER", "ADMIN"]).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
 
 type UserRow = Awaited<ReturnType<typeof prisma.user.findMany>>[number];
 
@@ -29,32 +36,50 @@ function serialize(u: UserRow): AdminUser {
 }
 
 export async function adminUserRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: { q?: string; flagged?: string } }>(
+  app.get<{ Querystring: { q?: string; flagged?: string; page?: string; role?: string; limit?: string } }>(
     "/admin/users",
     async (req, reply) => {
       const admin = await requireAdmin(req, reply);
       if (!admin) return;
-      const q = req.query.q?.trim();
-      const onlyFlagged = req.query.flagged === "true";
-      const rows = await prisma.user.findMany({
-        where: {
-          deletedAt: null,
-          ...(q
-            ? {
-                OR: [
-                  { email: { contains: q, mode: "insensitive" } },
-                  { displayName: { contains: q, mode: "insensitive" } },
-                  { username: { contains: q.toLowerCase() } },
-                  { walletAddress: { contains: q.toLowerCase() } },
-                ],
-              }
-            : {}),
-          ...(onlyFlagged ? { flagged: true } : {}),
-        },
-        orderBy: [{ role: "desc" }, { createdAt: "desc" }],
-        take: 200,
-      });
-      return { users: rows.map(serialize) };
+      const parsed = listUsersQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.flatten() });
+      }
+      const q = parsed.data.q?.trim();
+      const onlyFlagged = parsed.data.flagged === "true";
+      const page = parsed.data.page ?? 1;
+      const limit = parsed.data.limit ?? 200;
+      const where: Prisma.UserWhereInput = {
+        deletedAt: null,
+        ...(parsed.data.role ? { role: parsed.data.role } : {}),
+        ...(q
+          ? {
+              OR: [
+                { email: { contains: q, mode: "insensitive" } },
+                { displayName: { contains: q, mode: "insensitive" } },
+                { username: { contains: q.toLowerCase() } },
+                { walletAddress: { contains: q.toLowerCase() } },
+              ],
+            }
+          : {}),
+        ...(onlyFlagged ? { flagged: true } : {}),
+      };
+      const [total, rows] = await prisma.$transaction([
+        prisma.user.count({ where }),
+        prisma.user.findMany({
+          where,
+          orderBy: [{ role: "desc" }, { createdAt: "desc" }],
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+      ]);
+      return {
+        users: rows.map(serialize),
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      };
     },
   );
 

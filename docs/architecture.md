@@ -62,7 +62,8 @@
   - `profile.public.ts` — player profile + onboarding.
   - `quizzes.admin.ts` — full CRUD (admin JWT required).
   - `payouts.admin.ts` — payout ledger + retry on FAILED.
-  - `users.admin.ts` — user list + flag/unflag.
+  - `users.admin.ts` — user list + flag/unflag; supports role-filtered,
+    paginated admin-console list views.
   - `admin-stats.admin.ts` — dashboard KPIs.
   - `ai-gen.admin.ts` — admin-only AI topic suggestions + question generation.
 - Services (`apps/api/src/services/`): business logic, called by routes.
