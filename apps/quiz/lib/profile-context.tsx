@@ -10,8 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import type { CheckUsernameResult, MyProfile, PublicUser } from "@mini-quiz/shared";
-import { api } from "./api-client";
+import { ApiError, api } from "./api-client";
 import { connectAddress, isMiniPay } from "./minipay";
+import { clearWalletSession, getWalletSessionToken } from "./wallet-session";
 
 // Possible states the player app can be in. Pages branch off this:
 //
@@ -96,10 +97,22 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       if (state.status !== "ready" && state.status !== "needs-onboarding") {
         throw new Error("Cannot save profile before wallet is connected");
       }
-      const res = await api.patch<{ profile: MyProfile }>(`/users/me`, {
-        walletAddress: state.walletAddress,
-        ...input,
-      });
+      const saveWithToken = async (token: string) =>
+        api.patch<{ profile: MyProfile }>(
+          `/users/me`,
+          input,
+          { token },
+        );
+      let token = await getWalletSessionToken(state.walletAddress);
+      let res: { profile: MyProfile };
+      try {
+        res = await saveWithToken(token);
+      } catch (e) {
+        if (!(e instanceof ApiError) || e.status !== 401) throw e;
+        clearWalletSession(state.walletAddress);
+        token = await getWalletSessionToken(state.walletAddress);
+        res = await saveWithToken(token);
+      }
       await refreshFromWallet(state.walletAddress);
       return res.profile;
     },
