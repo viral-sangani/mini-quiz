@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { Loader } from "@/components/Loader";
 import { MiniPayGate } from "@/components/MiniPayGate";
@@ -14,12 +14,13 @@ import { useProfile } from "@/lib/profile-context";
 export default function OnboardedLayout({ children }: { children: ReactNode }) {
   const { state, refresh } = useProfile();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (state.status === "needs-onboarding") {
-      router.replace("/onboarding");
+    if (state.status === "needs-onboarding" && pathname !== "/profile") {
+      router.replace("/profile?complete=1");
     }
-  }, [state.status, router]);
+  }, [state.status, pathname, router]);
 
   if (state.status === "loading") {
     return <BootingScreen />;
@@ -39,7 +40,7 @@ export default function OnboardedLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (state.status === "needs-onboarding") {
+  if (state.status === "needs-onboarding" && pathname !== "/profile") {
     return <BootingScreen />;
   }
 

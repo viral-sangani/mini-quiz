@@ -564,7 +564,7 @@ function PlayInner() {
   if (phase === "gate") return <MiniPayGate targetUrl={pageUrl} />;
   if (phase === "needs_onboarding") {
     // Redirect; render a loader meanwhile.
-    if (typeof window !== "undefined") router.replace("/onboarding");
+    if (typeof window !== "undefined") router.replace("/profile?complete=1");
     return <BootingScreen />;
   }
   if (phase === "room_missing") return <RoomMissing code={code} message={errorMsg} />;

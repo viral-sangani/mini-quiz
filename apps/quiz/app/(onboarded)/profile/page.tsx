@@ -7,6 +7,7 @@ import { Avatar, avatarColorVar } from "@/components/Avatar";
 import { BadgeDetailSheet } from "@/components/BadgeDetailSheet";
 import { Icon, type IconName } from "@/components/Icon";
 import { Loader } from "@/components/Loader";
+import { Mango } from "@/components/Mango";
 import { MQCard } from "@/components/MQCard";
 import { MQButton } from "@/components/MQButton";
 import { ProgressBar } from "@/components/ProgressBar";
@@ -17,6 +18,10 @@ export default function ProfilePage() {
   const { state } = useProfile();
   // Selected badge for the detail sheet. Null means closed.
   const [openBadge, setOpenBadge] = useState<BadgeDef | null>(null);
+
+  if (state.status === "needs-onboarding") {
+    return <IncompleteProfilePage />;
+  }
 
   if (state.status !== "ready") {
     return <Loader label="Loading your profile…" pose="think" />;
@@ -266,6 +271,96 @@ export default function ProfilePage() {
         earnedAt={openBadge ? earnedDates.get(openBadge.id) ?? null : null}
         onClose={() => setOpenBadge(null)}
       />
+    </div>
+  );
+}
+
+function IncompleteProfilePage() {
+  return (
+    <div
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        padding: "16px 16px 112px",
+      }}
+    >
+      <h1 className="mq-h2" style={{ marginBottom: 14 }}>Profile</h1>
+
+      <MQCard style={{ padding: 18, textAlign: "center" }}>
+        <Mango pose="think" size={132} style={{ marginBottom: 8 }} />
+        <h2 className="mq-h2" style={{ fontSize: 24, marginBottom: 6 }}>
+          Finish your profile
+        </h2>
+        <p
+          className="mq-body"
+          style={{ fontSize: 14, maxWidth: 300, margin: "0 auto 16px" }}
+        >
+          Add your display name, username, and avatar before joining a quiz.
+        </p>
+        <Link href="/onboarding/avatar">
+          <MQButton block size="lg">
+            Add username
+            <Icon name="arrow-right" size={18} color="white" />
+          </MQButton>
+        </Link>
+      </MQCard>
+
+      <div
+        role="status"
+        style={{
+          position: "fixed",
+          left: 16,
+          right: 16,
+          bottom: 18,
+          zIndex: 20,
+          background: "var(--ink)",
+          color: "white",
+          borderRadius: 18,
+          padding: "12px 12px 12px 14px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          boxShadow: "0 8px 0 rgba(31, 42, 68, 0.2)",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 900,
+              fontSize: 14,
+              lineHeight: 1.1,
+            }}
+          >
+            Username required
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+            Complete this once to start playing.
+          </div>
+        </div>
+        <Link href="/onboarding/avatar" style={{ textDecoration: "none" }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: 36,
+              padding: "0 12px",
+              borderRadius: 999,
+              background: "white",
+              color: "var(--ink)",
+              fontFamily: "var(--font-display)",
+              fontWeight: 900,
+              fontSize: 12,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Add now
+          </span>
+        </Link>
+      </div>
     </div>
   );
 }
