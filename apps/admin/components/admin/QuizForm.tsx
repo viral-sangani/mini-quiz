@@ -8,7 +8,7 @@ import type {
   Difficulty,
   PayoutTokenSymbol,
 } from "@mini-quiz/shared";
-import { COVER_COLORS } from "@mini-quiz/shared";
+import { COVER_COLORS, getPayoutToken } from "@mini-quiz/shared";
 import { isoUtcToLocalDatetimeInput, localDatetimeInputToIsoUtc } from "@/lib/time";
 import { AdminIcon } from "@/components/AdminIcon";
 import { adminApi } from "@/lib/admin-api";
@@ -137,6 +137,10 @@ function normalizePrizeAmount(raw: string): string | null {
   const trimmed = raw.trim();
   if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(trimmed)) return null;
   return trimmed;
+}
+
+function prizeDecimalPlaces(raw: string): number {
+  return raw.trim().split(".")[1]?.length ?? 0;
 }
 
 function prizeNumber(raw: string): number {
@@ -300,6 +304,14 @@ export function QuizForm({
       if (normalizePrizeAmount(v.prizeAmounts[i] ?? "") == null) {
         setTab("prizes");
         setError(`Rank ${i + 1}: reward must be a non-negative number`);
+        return;
+      }
+      const decimals = getPayoutToken(v.payoutToken).decimals;
+      if (prizeDecimalPlaces(v.prizeAmounts[i] ?? "") > decimals) {
+        setTab("prizes");
+        setError(
+          `Rank ${i + 1}: ${v.payoutToken} rewards support at most ${decimals} decimal places`,
+        );
         return;
       }
     }

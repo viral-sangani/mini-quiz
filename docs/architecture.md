@@ -228,9 +228,11 @@ tuned with `PAYOUT_BURST_CONCURRENCY`, `PAYOUT_BURST_WINDOW_SIZE`,
 `PAYOUT_BURST_WINDOW_WAIT_FOR_MINED`,
 `PAYOUT_BURST_WINDOW_NONCE_POLL_MS`,
 `PAYOUT_BURST_WINDOW_NONCE_TIMEOUT_MS`, and
-`PAYOUT_BURST_RECEIPT_TIMEOUT_MS`. Final standings are read from
-Postgres-backed leaderboard aggregation after the quiz is `ENDED`; Redis live
-scores are hot-path state, not payout truth.
+`PAYOUT_BURST_RECEIPT_TIMEOUT_MS`. The scheduler periodically re-checks
+in-flight payout rows so confirmation timeouts and stale no-hash claims settle
+without requiring a worker restart. Final standings are read from Postgres-backed
+leaderboard aggregation after the quiz is `ENDED`; Redis live scores are
+hot-path state, not payout truth.
 
 ## Environment variables
 

@@ -18,6 +18,7 @@ import { fullLeaderboardRows } from "./room.service.js";
 // on the prior status so nothing double-fires.
 
 const TICK_INTERVAL_MS = 1_000;
+const PAYOUT_RESUME_INTERVAL_MS = 60_000;
 
 export type SchedulerHandle = { timer: NodeJS.Timeout | null };
 
@@ -25,6 +26,7 @@ export type SchedulerHandle = { timer: NodeJS.Timeout | null };
 // Single-replica only — if api ever scales beyond 1 pod, move this to a
 // leader-elected guard (or a DB row + advisory lock).
 let lastDailyHousekeepingDateKey: string | null = null;
+let lastPayoutResumeAt = 0;
 
 function utcDateKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
@@ -55,6 +57,11 @@ export function stopScheduler(handle: SchedulerHandle): void {
 
 async function tick(log: FastifyBaseLogger): Promise<void> {
   const now = new Date();
+
+  if (now.getTime() - lastPayoutResumeAt >= PAYOUT_RESUME_INTERVAL_MS) {
+    lastPayoutResumeAt = now.getTime();
+    await resumeInFlightPayouts();
+  }
 
   // 0. Daily housekeeping — once per UTC date.
   const dateKey = utcDateKey(now);

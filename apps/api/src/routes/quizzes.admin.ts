@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { QuizStatus } from "@prisma/client";
-import { COVER_COLORS } from "@mini-quiz/shared";
+import { COVER_COLORS, getPayoutToken } from "@mini-quiz/shared";
 import { requireAdmin } from "../auth.js";
 import { prisma } from "../db.js";
 import { broadcast } from "../sse/broker.js";
@@ -62,6 +62,20 @@ function sumPrize(amounts: string[]): number {
   return total;
 }
 
+function prizeDecimalError(
+  payoutToken: "CELO" | "USDC" | "USDT",
+  prizeAmounts: string[],
+): string | null {
+  const token = getPayoutToken(payoutToken);
+  for (let i = 0; i < prizeAmounts.length; i++) {
+    const [, fraction = ""] = prizeAmounts[i]!.split(".");
+    if (fraction.length > token.decimals) {
+      return `Rank ${i + 1}: ${payoutToken} rewards support at most ${token.decimals} decimal places.`;
+    }
+  }
+  return null;
+}
+
 // Refuse to create / edit a quiz that overcommits treasury balance.
 // Only enforced when the quiz is actually scheduled (not DRAFT) — drafts
 // don't lock funds yet. Returns an error envelope on failure or null on
@@ -116,6 +130,8 @@ export async function adminQuizRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: parsed.error.flatten() });
     }
     const payoutToken = parsed.data.payoutToken ?? "USDT";
+    const decimalError = prizeDecimalError(payoutToken, parsed.data.prizeAmounts);
+    if (decimalError) return reply.code(400).send({ error: decimalError });
     const scheduledStart = parsed.data.scheduledStart
       ? new Date(parsed.data.scheduledStart)
       : null;
@@ -181,9 +197,13 @@ export async function adminQuizRoutes(app: FastifyInstance) {
             ? new Date(parsed.data.scheduledStart)
             : null
           : existing.scheduledStart;
+      const payoutToken = parsed.data.payoutToken ?? existing.payoutToken;
+      const prizeAmounts = parsed.data.prizeAmounts ?? existing.prizeAmounts;
+      const decimalError = prizeDecimalError(payoutToken, prizeAmounts);
+      if (decimalError) return reply.code(400).send({ error: decimalError });
       const insufficient = await assertSufficientTreasury({
-        payoutToken: parsed.data.payoutToken ?? existing.payoutToken,
-        prizeAmounts: parsed.data.prizeAmounts ?? existing.prizeAmounts,
+        payoutToken,
+        prizeAmounts,
         scheduledStart,
         excludeQuizId: existing.id,
       });
