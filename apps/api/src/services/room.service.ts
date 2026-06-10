@@ -67,9 +67,16 @@ export async function joinRoom(
   const existing = await prisma.user.findUnique({
     where: { walletAddress: addr },
   });
-  if (!existing || existing.deletedAt || !existing.displayName || !existing.username) {
+  if (
+    !existing ||
+    existing.deletedAt ||
+    !existing.displayName ||
+    !existing.username ||
+    !existing.avatarEmoji ||
+    !existing.avatarColor
+  ) {
     // Soft-deleted users can't rejoin under their old wallet — they look like
-    // a fresh, un-onboarded user (no displayName/username).
+    // a fresh, un-onboarded user.
     return {
       error: "Profile incomplete — finish onboarding to join",
       code: "NEEDS_ONBOARDING",

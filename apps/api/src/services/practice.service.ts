@@ -67,9 +67,21 @@ export async function startPracticeSession(
   }
   const user = await prisma.user.findFirst({
     where: { walletAddress: addr, deletedAt: null },
-    select: { id: true, displayName: true, username: true },
+    select: {
+      id: true,
+      displayName: true,
+      username: true,
+      avatarEmoji: true,
+      avatarColor: true,
+    },
   });
-  if (!user || !user.displayName || !user.username) {
+  if (
+    !user ||
+    !user.displayName ||
+    !user.username ||
+    !user.avatarEmoji ||
+    !user.avatarColor
+  ) {
     return {
       kind: "error",
       error: "Profile incomplete — finish onboarding first",

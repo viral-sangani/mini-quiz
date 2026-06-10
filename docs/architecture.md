@@ -98,6 +98,9 @@
 - Talks to API via `NEXT_PUBLIC_API_BASE_URL`. SSE for live state.
 - MiniPay-specific: `lib/minipay.ts` detects `window.ethereum.isMiniPay`
   and auto-connects the wallet (no connect button).
+- `/users/me` is a read/profile check for first-time wallets. It must not
+  insert a stub `User`; the row is created only when the signed wallet saves a
+  complete onboarding profile (display name, username, avatar).
 
 ### `apps/admin` — admin console
 
@@ -154,7 +157,8 @@ the same PR; partitions are still a future step once table size/load demands it.
 ### Player joins + plays
 
 1. Player taps QR / deep link → `apps/quiz/play/[code]`.
-2. Frontend `POST /rooms/:code/join` with display name + wallet.
+2. Frontend gates on complete onboarding, then `POST /rooms/:code/join` with
+   the wallet. The API rejects incomplete profiles with `NEEDS_ONBOARDING`.
 3. Server creates `RoomPlayer` row, returns `roomPlayerId` + JWT.
 4. Frontend opens SSE `/rooms/:code/events?token=...`; production ingress
    routes this path to the realtime gateway service.

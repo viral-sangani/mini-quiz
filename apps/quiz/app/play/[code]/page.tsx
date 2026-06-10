@@ -28,7 +28,11 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { StatTile } from "@/components/StatTile";
 import { ApiError, api } from "@/lib/api-client";
 import { formatTokenAmount } from "@/lib/format";
-import { useProfile } from "@/lib/profile-context";
+import {
+  isProfileComplete,
+  onboardingPathForProfile,
+  useProfile,
+} from "@/lib/profile-context";
 import { useRoomEvents } from "@/lib/sse";
 import { msUntil } from "@/lib/time";
 
@@ -116,13 +120,10 @@ function PlayInner() {
     authState.status === "ready" || authState.status === "needs-onboarding"
       ? authState.profile
       : null;
-  const hasRequiredUsername = !!activeProfile?.username;
-  const onboardingRedirectPath =
-    activeProfile?.displayName &&
-    activeProfile.avatarEmoji &&
-    activeProfile.avatarColor
-      ? "/onboarding/username"
-      : "/onboarding";
+  const hasCompleteProfile = activeProfile ? isProfileComplete(activeProfile) : false;
+  const onboardingRedirectPath = activeProfile
+    ? onboardingPathForProfile(activeProfile)
+    : "/onboarding/avatar";
 
   const pageUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
@@ -160,7 +161,7 @@ function PlayInner() {
       setPhase("needs_onboarding");
       return;
     }
-    if (!hasRequiredUsername) {
+    if (!hasCompleteProfile) {
       setPhase("needs_onboarding");
       return;
     }
@@ -204,7 +205,7 @@ function PlayInner() {
     return () => {
       cancelled = true;
     };
-  }, [authState.status, code, hasRequiredUsername]);
+  }, [authState.status, code, hasCompleteProfile]);
 
   // While in pre_lobby, watch the clock and flip to joining once the lobby opens.
   useEffect(() => {

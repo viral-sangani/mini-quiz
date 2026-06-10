@@ -32,6 +32,10 @@ const EMPTY_STATS: AdminUsersStats = {
   totalMatchesPlayed: 0,
 };
 
+type AdminUsersWireResponse = Omit<AdminUsersResponse, "stats"> & {
+  stats?: AdminUsersStats;
+};
+
 const EMPTY_PAGINATION = {
   page: 1,
   limit: PAGE_SIZE,
@@ -41,6 +45,28 @@ const EMPTY_PAGINATION = {
 
 function roleFor(tab: Tab): "USER" | "ADMIN" {
   return tab === "admins" ? "ADMIN" : "USER";
+}
+
+function isUserJoinedLast24h(user: AdminUser): boolean {
+  const joinedAt = new Date(user.createdAt).getTime();
+  return Number.isFinite(joinedAt) && Date.now() - joinedAt < 24 * 60 * 60 * 1000;
+}
+
+function fallbackStatsForLegacyResponse(
+  targetTab: Tab,
+  total: number,
+  users: AdminUser[],
+  previous: AdminUsersStats,
+): AdminUsersStats {
+  return {
+    ...previous,
+    totalPlayers: targetTab === "players" ? total : previous.totalPlayers,
+    totalAdmins: targetTab === "admins" ? total : previous.totalAdmins,
+    playersLast24h:
+      targetTab === "players"
+        ? users.filter(isUserJoinedLast24h).length
+        : previous.playersLast24h,
+  };
 }
 
 function formatJoinedAt(value: string): string {
@@ -90,14 +116,23 @@ export default function PlayersPage() {
       });
       if (targetSearch.trim()) params.set("q", targetSearch.trim());
 
-      const data = await adminApi.get<AdminUsersResponse>(`/admin/users?${params}`);
-      setUsers(data.users);
-      setStats(data.stats);
+      const data = await adminApi.get<AdminUsersWireResponse>(`/admin/users?${params}`);
+      const loadedUsers = Array.isArray(data.users) ? data.users : [];
+      const responsePage = data.page ?? targetPage;
+      const responseLimit = data.limit ?? PAGE_SIZE;
+      const responseTotal = data.total ?? loadedUsers.length;
+      const responseTotalPages =
+        data.totalPages ?? Math.max(1, Math.ceil(responseTotal / responseLimit));
+      setUsers(loadedUsers);
+      setStats((previous) =>
+        data.stats ??
+        fallbackStatsForLegacyResponse(targetTab, responseTotal, loadedUsers, previous),
+      );
       setPagination({
-        page: data.page,
-        limit: data.limit,
-        total: data.total,
-        totalPages: data.totalPages,
+        page: responsePage,
+        limit: responseLimit,
+        total: responseTotal,
+        totalPages: responseTotalPages,
       });
       setError(null);
     } catch (e) {

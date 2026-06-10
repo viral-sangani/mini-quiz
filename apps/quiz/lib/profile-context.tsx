@@ -65,6 +65,27 @@ type MeResponse = {
   needsOnboarding: boolean;
 };
 
+export function isProfileComplete(profile: Pick<
+  MyProfile,
+  "username" | "displayName" | "avatarEmoji" | "avatarColor"
+>): boolean {
+  return Boolean(
+    profile.username?.trim() &&
+      profile.displayName?.trim() &&
+      profile.avatarEmoji &&
+      profile.avatarColor,
+  );
+}
+
+export function onboardingPathForProfile(profile: Pick<
+  MyProfile,
+  "avatarEmoji" | "avatarColor"
+>): string {
+  return profile.avatarEmoji && profile.avatarColor
+    ? "/onboarding/username"
+    : "/onboarding/avatar";
+}
+
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
 
@@ -74,8 +95,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     const me = await api.get<MeResponse>(
       `/users/me?walletAddress=${addr}`,
     );
+    const needsOnboarding = me.needsOnboarding || !isProfileComplete(me.profile);
     setState({
-      status: me.needsOnboarding ? "needs-onboarding" : "ready",
+      status: needsOnboarding ? "needs-onboarding" : "ready",
       walletAddress: addr,
       user: me.user,
       profile: me.profile,

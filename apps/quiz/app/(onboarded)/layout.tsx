@@ -1,12 +1,12 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { Loader } from "@/components/Loader";
 import { MiniPayGate } from "@/components/MiniPayGate";
 import { ProfileErrorScreen } from "@/components/ProfileErrorScreen";
 import { TabBar } from "@/components/TabBar";
-import { useProfile } from "@/lib/profile-context";
+import { onboardingPathForProfile, useProfile } from "@/lib/profile-context";
 
 // Wraps the player-facing tabs (Home / Leaderboard / Profile). All three
 // require a wallet + a complete profile; this layout enforces both gates.
@@ -14,13 +14,16 @@ import { useProfile } from "@/lib/profile-context";
 export default function OnboardedLayout({ children }: { children: ReactNode }) {
   const { state, refresh } = useProfile();
   const router = useRouter();
-  const pathname = usePathname();
+  const onboardingPath =
+    state.status === "needs-onboarding"
+      ? onboardingPathForProfile(state.profile)
+      : "/onboarding/avatar";
 
   useEffect(() => {
-    if (state.status === "needs-onboarding" && pathname !== "/profile") {
-      router.replace("/profile?complete=1");
+    if (state.status === "needs-onboarding") {
+      router.replace(onboardingPath);
     }
-  }, [state.status, pathname, router]);
+  }, [state.status, onboardingPath, router]);
 
   if (state.status === "loading") {
     return <BootingScreen />;
@@ -40,7 +43,7 @@ export default function OnboardedLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (state.status === "needs-onboarding" && pathname !== "/profile") {
+  if (state.status === "needs-onboarding") {
     return <BootingScreen />;
   }
 

@@ -39,6 +39,47 @@ function publicUserView(u: {
   };
 }
 
+function hasCompleteProfile(u: {
+  username: string | null;
+  displayName: string | null;
+  avatarEmoji: string | null;
+  avatarColor: string | null;
+}): boolean {
+  return Boolean(u.username && u.displayName && u.avatarEmoji && u.avatarColor);
+}
+
+function emptyOnboardingProfile(addr: string): {
+  user: PublicUser & { walletAddress: string };
+  profile: MyProfile;
+} {
+  const lvl = computeLevel(0);
+  const user: PublicUser & { walletAddress: string } = {
+    id: "",
+    username: null,
+    displayName: null,
+    avatarEmoji: null,
+    avatarColor: null,
+    walletAddress: addr,
+  };
+  return {
+    user,
+    profile: {
+      ...user,
+      totalXp: 0,
+      level: lvl.level,
+      xpInLevel: lvl.xpInLevel,
+      xpToNextLevel: lvl.xpToNextLevel,
+      quizzesPlayed: 0,
+      wins: 0,
+      lifetimeUsdtWon: "0",
+      currentStreak: 0,
+      longestStreak: 0,
+      dailyWins: 0,
+      badges: [],
+    },
+  };
+}
+
 // ---------- username helpers ----------
 
 function normalizeUsername(value: string): string {
@@ -97,9 +138,9 @@ export async function checkUsername(value: string): Promise<CheckUsernameResult>
 // ---------- profile read ----------
 
 // `getMyProfile` is keyed by walletAddress (the player's identity) so the
-// player app can fetch /users/me with just their wallet. Creates the user row
-// if it doesn't exist yet — first-time wallets get a stub User and are then
-// pushed through onboarding (which fills in displayName/username/avatar).
+// player app can fetch /users/me with just their wallet. A first-time wallet
+// gets an in-memory onboarding profile; the DB row is created only when the
+// signed wallet saves username/display name/avatar via PATCH /users/me.
 export async function getOrCreatePlayerByWallet(walletAddress: string): Promise<{
   user: PublicUser & { walletAddress: string };
   profile: MyProfile;
@@ -109,12 +150,14 @@ export async function getOrCreatePlayerByWallet(walletAddress: string): Promise<
   if (!/^0x[0-9a-f]{40}$/.test(addr)) {
     throw new Error("invalid walletAddress");
   }
-  const user = await prisma.user.upsert({
+  const user = await prisma.user.findUnique({
     where: { walletAddress: addr },
-    create: { walletAddress: addr, role: "USER" },
-    update: {},
     include: { badges: true },
   });
+  if (!user || user.deletedAt) {
+    const profile = emptyOnboardingProfile(addr);
+    return { ...profile, needsOnboarding: true };
+  }
 
   // Stats: quizzes played, top-3 wins, lifetime confirmed USDT, daily wins.
   // Daily wins = count of DailyLeaderboardSnapshot rows where this user was
@@ -163,7 +206,7 @@ export async function getOrCreatePlayerByWallet(walletAddress: string): Promise<
   return {
     user: { ...publicUserView(user), walletAddress: addr },
     profile,
-    needsOnboarding: !user.username || !user.displayName || !user.avatarEmoji,
+    needsOnboarding: !hasCompleteProfile(user),
   };
 }
 

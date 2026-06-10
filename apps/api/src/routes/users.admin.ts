@@ -15,6 +15,13 @@ const listUsersQuerySchema = z.object({
 
 type UserRow = Awaited<ReturnType<typeof prisma.user.findMany>>[number];
 
+const completedPlayerProfileWhere = {
+  username: { not: null },
+  displayName: { not: null },
+  avatarEmoji: { not: null },
+  avatarColor: { not: null },
+} satisfies Prisma.UserWhereInput;
+
 function serialize(u: UserRow): AdminUser {
   return {
     id: u.id,
@@ -50,9 +57,12 @@ export async function adminUserRoutes(app: FastifyInstance) {
       const page = parsed.data.page ?? 1;
       const limit = parsed.data.limit ?? 10;
       const role = parsed.data.role ?? "USER";
+      const completedProfileFilter =
+        role === "USER" ? completedPlayerProfileWhere : {};
       const where: Prisma.UserWhereInput = {
         deletedAt: null,
         role,
+        ...completedProfileFilter,
         ...(q
           ? {
               OR: [
@@ -81,18 +91,38 @@ export async function adminUserRoutes(app: FastifyInstance) {
           skip: (page - 1) * limit,
           take: limit,
         }),
-        prisma.user.count({ where: { role: "USER", deletedAt: null } }),
+        prisma.user.count({
+          where: {
+            role: "USER",
+            deletedAt: null,
+            ...completedPlayerProfileWhere,
+          },
+        }),
         prisma.user.count({ where: { role: "ADMIN", deletedAt: null } }),
         prisma.user.count({
-          where: { role: "USER", deletedAt: null, createdAt: { gte: since24h } },
+          where: {
+            role: "USER",
+            deletedAt: null,
+            createdAt: { gte: since24h },
+            ...completedPlayerProfileWhere,
+          },
         }),
         prisma.user.count({
-          where: { role: "USER", deletedAt: null, walletAddress: { not: null } },
+          where: {
+            role: "USER",
+            deletedAt: null,
+            walletAddress: { not: null },
+            ...completedPlayerProfileWhere,
+          },
         }),
         prisma.roomPlayer.count({
           where: {
             quiz: { kind: "LIVE" },
-            user: { role: "USER", deletedAt: null },
+            user: {
+              role: "USER",
+              deletedAt: null,
+              ...completedPlayerProfileWhere,
+            },
           },
         }),
       ]);

@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import { Loader } from "@/components/Loader";
+import { MiniPayGate } from "@/components/MiniPayGate";
 import { ProfileErrorScreen } from "@/components/ProfileErrorScreen";
 import { useProfile } from "@/lib/profile-context";
 
@@ -24,6 +26,26 @@ export default function OnboardingLayout({ children }: { children: ReactNode }) 
         onRetry={() => void refresh()}
       />
     );
+  }
+
+  if (state.status === "loading" || state.status === "ready") {
+    return (
+      <main
+        className="mq-screen"
+        style={{
+          minHeight: "100dvh",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Loader label="Getting things ready..." sub="Connecting to MiniPay" />
+      </main>
+    );
+  }
+
+  if (state.status === "no-wallet") {
+    const targetUrl = typeof window !== "undefined" ? window.location.href : "";
+    return <MiniPayGate targetUrl={targetUrl} />;
   }
 
   return <main className="mq-screen" style={{ minHeight: "100dvh" }}>{children}</main>;
