@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { AdminStats, PayoutStatus, PayoutTokenSymbol } from "@mini-quiz/shared";
 import { BLOCKSCOUT_TX } from "@mini-quiz/shared";
@@ -54,6 +55,8 @@ export default function PayoutsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
+  const searchParams = useSearchParams();
+  const quizIdFilter = searchParams.get("quizId");
 
   const load = async () => {
     setLoading(true);
@@ -79,15 +82,70 @@ export default function PayoutsPage() {
   }, []);
 
   const visible = useMemo(() => {
-    if (filter === "ALL") return rows;
-    if (filter === "FAILED") return rows.filter((r) => r.status === "FAILED");
+    const scoped = quizIdFilter
+      ? rows.filter((r) => r.quizId === quizIdFilter)
+      : rows;
+    if (filter === "ALL") return scoped;
+    if (filter === "FAILED") return scoped.filter((r) => r.status === "FAILED");
     if (filter === "CONFIRMED")
-      return rows.filter((r) => r.status === "CONFIRMED");
-    return rows.filter(
+      return scoped.filter((r) => r.status === "CONFIRMED");
+    return scoped.filter(
       (r) =>
-        r.status === "PENDING" || r.status === "APPROVED" || r.status === "BROADCAST",
+        r.status === "PENDING" ||
+        r.status === "APPROVED" ||
+        r.status === "BROADCASTING" ||
+        r.status === "BROADCAST",
     );
-  }, [rows, filter]);
+  }, [rows, filter, quizIdFilter]);
+
+  const payoutRuns = useMemo(() => {
+    const byQuiz = new Map<
+      string,
+      {
+        quizId: string;
+        quizTitle: string;
+        quizCode: string;
+        token: PayoutTokenSymbol;
+        total: number;
+        confirmed: number;
+        failed: number;
+        inFlight: number;
+        amount: number;
+        latestAt: string;
+      }
+    >();
+    for (const row of rows) {
+      const existing =
+        byQuiz.get(row.quizId) ??
+        {
+          quizId: row.quizId,
+          quizTitle: row.quizTitle,
+          quizCode: row.quizCode,
+          token: row.payoutToken,
+          total: 0,
+          confirmed: 0,
+          failed: 0,
+          inFlight: 0,
+          amount: 0,
+          latestAt: row.updatedAt,
+        };
+      existing.total += 1;
+      existing.amount += Number(row.amount || 0);
+      if (row.status === "CONFIRMED") existing.confirmed += 1;
+      else if (row.status === "FAILED") existing.failed += 1;
+      else existing.inFlight += 1;
+      if (new Date(row.updatedAt).getTime() > new Date(existing.latestAt).getTime()) {
+        existing.latestAt = row.updatedAt;
+      }
+      byQuiz.set(row.quizId, existing);
+    }
+    return Array.from(byQuiz.values())
+      .sort(
+        (a, b) =>
+          new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime(),
+      )
+      .slice(0, 6);
+  }, [rows]);
 
   const retry = async (id: string) => {
     setBusyId(id);
@@ -207,7 +265,134 @@ export default function PayoutsPage() {
               {f.label}
             </button>
           ))}
+          {quizIdFilter && (
+            <Link href="/payouts" className="adm-btn adm-btn--sm">
+              Clear game filter
+            </Link>
+          )}
         </div>
+
+        {payoutRuns.length > 0 && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: 12,
+              marginBottom: 14,
+            }}
+          >
+            {payoutRuns.map((run) => {
+              const complete = run.confirmed === run.total && run.failed === 0;
+              const pct =
+                run.total > 0 ? Math.round((run.confirmed / run.total) * 100) : 0;
+              return (
+                <Link
+                  key={run.quizId}
+                  href={`/payouts?quizId=${run.quizId}`}
+                  className="adm-card"
+                  style={{
+                    padding: 14,
+                    textDecoration: "none",
+                    color: "var(--a-ink)",
+                    borderColor:
+                      run.failed > 0
+                        ? "var(--a-wrong)"
+                        : complete
+                          ? "var(--a-primary)"
+                          : "var(--a-accent)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 900,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {run.quizTitle}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--a-ink-faint)", marginTop: 2 }}>
+                        {run.quizCode} · {Number(run.amount.toFixed(6))} {run.token}
+                      </div>
+                    </div>
+                    <span
+                      className={`adm-badge ${
+                        complete ? "confirmed" : run.failed > 0 ? "failed" : "broadcast"
+                      }`}
+                    >
+                      {complete ? "ALL PAID" : run.failed > 0 ? "ATTENTION" : "SENDING"}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontWeight: 900,
+                        fontSize: 26,
+                      }}
+                    >
+                      {run.confirmed}
+                    </span>
+                    <span style={{ color: "var(--a-ink-soft)", fontWeight: 800 }}>
+                      / {run.total} confirmed
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      height: 6,
+                      borderRadius: 6,
+                      background: "var(--a-line-soft)",
+                      overflow: "hidden",
+                      marginTop: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${pct}%`,
+                        height: "100%",
+                        background: complete
+                          ? "var(--a-primary)"
+                          : run.failed > 0
+                            ? "var(--a-wrong)"
+                            : "var(--a-accent)",
+                      }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      marginTop: 10,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "var(--a-ink-soft)",
+                    }}
+                  >
+                    <span>{run.inFlight} in flight</span>
+                    <span>{run.failed} failed</span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
 
         {error && (
           <div

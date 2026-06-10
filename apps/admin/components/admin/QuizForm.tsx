@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   AdminQuestion,
   AdminQuiz,
@@ -60,6 +60,7 @@ const LOBBY_PRESETS = [
   { label: "15 min", value: 15 * 60_000 },
   { label: "1 hour", value: 60 * 60_000 },
 ] as const;
+const MAX_PRIZE_RANKS = 500;
 
 function defaultValue(): QuizFormValue {
   return {
@@ -124,6 +125,78 @@ const COVER_VAR: Record<CoverColor, string> = {
   ink: "var(--a-ink)",
 };
 
+type PrizeTier = {
+  from: number;
+  to: number;
+  amount: string;
+  count: number;
+  subtotal: number;
+};
+
+function normalizePrizeAmount(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function prizeNumber(raw: string): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function clampRank(raw: string | number, fallback: number): number {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(MAX_PRIZE_RANKS, Math.max(1, Math.floor(n)));
+}
+
+function resizePrizes(amounts: string[], count: number): string[] {
+  const safeCount = clampRank(count, amounts.length || 1);
+  const next = amounts.slice(0, safeCount);
+  const fill = next[next.length - 1] ?? amounts[amounts.length - 1] ?? "0";
+  while (next.length < safeCount) next.push(fill);
+  return next;
+}
+
+function applyPrizeRange(
+  amounts: string[],
+  fromRaw: string,
+  toRaw: string,
+  amountRaw: string,
+): string[] | null {
+  const amount = normalizePrizeAmount(amountRaw);
+  if (amount == null) return null;
+  const from = clampRank(fromRaw, 1);
+  const to = clampRank(toRaw, from);
+  const start = Math.min(from, to);
+  const end = Math.max(from, to);
+  const next = resizePrizes(amounts, Math.max(amounts.length, end));
+  for (let i = start - 1; i <= end - 1; i++) next[i] = amount;
+  return next;
+}
+
+function compressPrizeAmounts(amounts: string[]): PrizeTier[] {
+  const tiers: PrizeTier[] = [];
+  for (let i = 0; i < amounts.length; i++) {
+    const amount = amounts[i] ?? "0";
+    const previous = tiers[tiers.length - 1];
+    if (previous && previous.amount === amount) {
+      previous.to = i + 1;
+      previous.count += 1;
+      previous.subtotal += prizeNumber(amount);
+    } else {
+      tiers.push({
+        from: i + 1,
+        to: i + 1,
+        amount,
+        count: 1,
+        subtotal: prizeNumber(amount),
+      });
+    }
+  }
+  return tiers;
+}
+
 export function QuizForm({
   initial,
   submitLabel = "Save",
@@ -133,12 +206,25 @@ export function QuizForm({
   submitLabel?: string;
   onSubmit: (v: QuizFormSubmit) => Promise<void>;
 }) {
-  const [v, setV] = useState<QuizFormValue>(initial ?? defaultValue());
+  const initialValue = initial ?? defaultValue();
+  const [v, setV] = useState<QuizFormValue>(initialValue);
   const [tab, setTab] = useState<QuizFormTab>("basics");
   const [aiOpen, setAiOpen] = useState(false);
   const [aiDraft, setAiDraft] = useState<AIGenerationContext | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [winnerCountDraft, setWinnerCountDraft] = useState(
+    String(initialValue.prizeAmounts.length),
+  );
+  const [rangeDraft, setRangeDraft] = useState({
+    from: "1",
+    to: "50",
+    amount: initialValue.prizeAmounts[0] ?? "0",
+  });
+  const [rankDraft, setRankDraft] = useState({
+    rank: "1",
+    amount: initialValue.prizeAmounts[0] ?? "0",
+  });
 
   const patch = (p: Partial<QuizFormValue>) => setV((prev) => ({ ...prev, ...p }));
   const tabIndex = TABS.indexOf(tab);
@@ -205,6 +291,18 @@ export function QuizForm({
       setError("Add at least one question");
       return;
     }
+    if (v.prizeAmounts.length < 1 || v.prizeAmounts.length > MAX_PRIZE_RANKS) {
+      setTab("prizes");
+      setError(`Prize plan must include between 1 and ${MAX_PRIZE_RANKS} ranks`);
+      return;
+    }
+    for (let i = 0; i < v.prizeAmounts.length; i++) {
+      if (normalizePrizeAmount(v.prizeAmounts[i] ?? "") == null) {
+        setTab("prizes");
+        setError(`Rank ${i + 1}: reward must be a non-negative number`);
+        return;
+      }
+    }
     for (let i = 0; i < v.questions.length; i++) {
       const q = v.questions[i]!;
       if (!q.prompt.trim()) {
@@ -257,6 +355,14 @@ export function QuizForm({
     .map((a) => Number(a))
     .filter((n) => Number.isFinite(n))
     .reduce((a, b) => a + b, 0);
+  const prizeTiers = useMemo(
+    () => compressPrizeAmounts(v.prizeAmounts),
+    [v.prizeAmounts],
+  );
+  const paidRanks = useMemo(
+    () => v.prizeAmounts.filter((a) => prizeNumber(a) > 0).length,
+    [v.prizeAmounts],
+  );
 
   // Treasury balance gate. Whenever the picked token or the total pool
   // changes, re-check available funds. We rely on the server cache (30s)
@@ -649,13 +755,10 @@ export function QuizForm({
               <div className="adm-card-h">
                 <h3>Prize pool ({v.payoutToken})</h3>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "var(--a-ink-soft)" }}>
-                  Total: {Number(totalPool.toFixed(6))} {v.payoutToken}
+                  {paidRanks} paid ranks · Total: {Number(totalPool.toFixed(6))} {v.payoutToken}
                 </div>
               </div>
               <div style={{ padding: 18 }}>
-                <p style={{ fontSize: 12, color: "var(--a-ink-faint)", marginBottom: 12 }}>
-                  Top-N prizes — position 1 is 1st place. Auto-paid when the game ends.
-                </p>
                 {/* Token picker. Choosing CELO vs a stablecoin re-runs the
                   * treasury balance check below. */}
                 <div className="adm-field" style={{ marginBottom: 14 }}>
@@ -691,49 +794,231 @@ export function QuizForm({
                         : `⚠ Need ${(totalPool - availableForToken).toFixed(v.payoutToken === "CELO" ? 4 : 2)} more ${v.payoutToken} — see deposit panel below`}
                   </span>
                 </div>
+
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(5, 1fr)",
-                    gap: 8,
+                    gridTemplateColumns: "160px 1fr",
+                    gap: 14,
+                    alignItems: "stretch",
+                    marginBottom: 14,
                   }}
                 >
-                  {v.prizeAmounts.map((val, idx) => (
-                    <div key={idx} className="adm-field">
-                      <label>#{idx + 1}</label>
+                  <div
+                    style={{
+                      border: "1px solid var(--a-line)",
+                      borderRadius: 8,
+                      padding: 12,
+                      background: "var(--a-bg)",
+                    }}
+                  >
+                    <div className="adm-field">
+                      <label>Winner slots (1-500)</label>
                       <input
                         className="adm-input"
-                        inputMode="decimal"
-                        value={val}
-                        onChange={(e) => {
-                          const next = [...v.prizeAmounts];
-                          next[idx] = e.target.value;
-                          patch({ prizeAmounts: next });
-                        }}
+                        type="number"
+                        min={1}
+                        max={MAX_PRIZE_RANKS}
+                        value={winnerCountDraft}
+                        onChange={(e) => setWinnerCountDraft(e.target.value)}
                       />
                     </div>
-                  ))}
+                    <button
+                      type="button"
+                      className="adm-btn adm-btn--sm adm-btn--primary"
+                      style={{ marginTop: 10, width: "100%" }}
+                      onClick={() => {
+                        const count = clampRank(winnerCountDraft, v.prizeAmounts.length);
+                        patch({ prizeAmounts: resizePrizes(v.prizeAmounts, count) });
+                        setWinnerCountDraft(String(count));
+                      }}
+                    >
+                      Resize plan
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      border: "1px solid var(--a-line)",
+                      borderRadius: 8,
+                      padding: 12,
+                      background: "white",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(4, minmax(0, 1fr)) auto",
+                        gap: 8,
+                        alignItems: "end",
+                      }}
+                    >
+                      <div className="adm-field">
+                        <label>From rank</label>
+                        <input
+                          className="adm-input"
+                          type="number"
+                          min={1}
+                          max={MAX_PRIZE_RANKS}
+                          value={rangeDraft.from}
+                          onChange={(e) =>
+                            setRangeDraft((prev) => ({ ...prev, from: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="adm-field">
+                        <label>To rank</label>
+                        <input
+                          className="adm-input"
+                          type="number"
+                          min={1}
+                          max={MAX_PRIZE_RANKS}
+                          value={rangeDraft.to}
+                          onChange={(e) =>
+                            setRangeDraft((prev) => ({ ...prev, to: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="adm-field" style={{ gridColumn: "span 2" }}>
+                        <label>Amount per rank</label>
+                        <input
+                          className="adm-input"
+                          inputMode="decimal"
+                          value={rangeDraft.amount}
+                          onChange={(e) =>
+                            setRangeDraft((prev) => ({ ...prev, amount: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="adm-btn adm-btn--sm adm-btn--primary"
+                        onClick={() => {
+                          const next = applyPrizeRange(
+                            v.prizeAmounts,
+                            rangeDraft.from,
+                            rangeDraft.to,
+                            rangeDraft.amount,
+                          );
+                          if (!next) {
+                            setError("Range amount must be a non-negative number");
+                            return;
+                          }
+                          patch({ prizeAmounts: next });
+                          setWinnerCountDraft(String(next.length));
+                          setError(null);
+                        }}
+                      >
+                        Apply range
+                      </button>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr)) auto",
+                        gap: 8,
+                        alignItems: "end",
+                        marginTop: 12,
+                        paddingTop: 12,
+                        borderTop: "1px solid var(--a-line-soft)",
+                      }}
+                    >
+                      <div className="adm-field">
+                        <label>Exact rank</label>
+                        <input
+                          className="adm-input"
+                          type="number"
+                          min={1}
+                          max={MAX_PRIZE_RANKS}
+                          value={rankDraft.rank}
+                          onChange={(e) =>
+                            setRankDraft((prev) => ({ ...prev, rank: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="adm-field" style={{ gridColumn: "span 2" }}>
+                        <label>Override amount</label>
+                        <input
+                          className="adm-input"
+                          inputMode="decimal"
+                          value={rankDraft.amount}
+                          onChange={(e) =>
+                            setRankDraft((prev) => ({ ...prev, amount: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="adm-btn adm-btn--sm"
+                        onClick={() => {
+                          const rank = clampRank(rankDraft.rank, 1);
+                          const next = applyPrizeRange(
+                            v.prizeAmounts,
+                            String(rank),
+                            String(rank),
+                            rankDraft.amount,
+                          );
+                          if (!next) {
+                            setError("Rank amount must be a non-negative number");
+                            return;
+                          }
+                          patch({ prizeAmounts: next });
+                          setWinnerCountDraft(String(next.length));
+                          setError(null);
+                        }}
+                      >
+                        Set rank
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                  <button
-                    type="button"
-                    className="adm-btn adm-btn--sm"
-                    onClick={() =>
-                      patch({ prizeAmounts: [...v.prizeAmounts, "0"] })
-                    }
-                  >
-                    + Add rank
-                  </button>
-                  <button
-                    type="button"
-                    className="adm-btn adm-btn--sm"
-                    disabled={v.prizeAmounts.length <= 1}
-                    onClick={() =>
-                      patch({ prizeAmounts: v.prizeAmounts.slice(0, -1) })
-                    }
-                  >
-                    − Remove last
-                  </button>
+
+                <div className="adm-card" style={{ borderRadius: 8, overflow: "hidden" }}>
+                  <table className="adm-table">
+                    <thead>
+                      <tr>
+                        <th>Ranks</th>
+                        <th className="num">Winners</th>
+                        <th className="num">Each</th>
+                        <th className="num">Subtotal</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prizeTiers.map((tier) => (
+                        <tr key={`${tier.from}-${tier.to}-${tier.amount}`}>
+                          <td style={{ fontWeight: 800 }}>
+                            {tier.from === tier.to
+                              ? `#${tier.from}`
+                              : `#${tier.from} - #${tier.to}`}
+                          </td>
+                          <td className="num">{tier.count}</td>
+                          <td className="num">
+                            {tier.amount} {v.payoutToken}
+                          </td>
+                          <td className="num" style={{ fontWeight: 800 }}>
+                            {Number(tier.subtotal.toFixed(6))} {v.payoutToken}
+                          </td>
+                          <td className="text-right">
+                            <button
+                              type="button"
+                              className="adm-btn adm-btn--sm"
+                              onClick={() => {
+                                setRangeDraft({
+                                  from: String(tier.from),
+                                  to: String(tier.to),
+                                  amount: tier.amount,
+                                });
+                              }}
+                            >
+                              Edit range
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -779,7 +1064,7 @@ export function QuizForm({
                 <ReviewRow label="Questions" value={String(v.questions.length)} />
                 <ReviewRow
                   label="Pool ranks"
-                  value={`${v.prizeAmounts.length} (total $${Number(totalPool.toFixed(6))})`}
+                  value={`${paidRanks}/${v.prizeAmounts.length} paid (total $${Number(totalPool.toFixed(6))})`}
                 />
               </div>
             </div>
@@ -906,7 +1191,7 @@ function PreviewCard({
             {v.questions.length} questions · {v.difficulty.charAt(0) + v.difficulty.slice(1).toLowerCase()} · ${Number(totalPool.toFixed(6))} pool
           </div>
           <div style={{ fontSize: 11, fontWeight: 800, opacity: 0.9, marginBottom: 10 }}>
-            {v.minParticipants}+ players · lobby opens {Math.round(v.lobbyOpenLeadMs / 60_000)}m early
+            Top {v.prizeAmounts.filter((a) => prizeNumber(a) > 0).length} paid · lobby opens {Math.round(v.lobbyOpenLeadMs / 60_000)}m early
           </div>
           <div
             style={{

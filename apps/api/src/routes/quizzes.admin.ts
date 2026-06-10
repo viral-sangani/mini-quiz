@@ -25,6 +25,11 @@ const questionSchema = z.object({
   choices: z.array(choiceSchema).min(2).max(6),
   correctChoiceId: z.string().min(1),
 });
+const MAX_PRIZE_RANKS = 500;
+const prizeAmountSchema = z
+  .string()
+  .trim()
+  .regex(/^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/, "Must be a non-negative number");
 
 const createSchema = z.object({
   title: z.string().min(1).max(200),
@@ -35,7 +40,7 @@ const createSchema = z.object({
     .nullable()
     .optional(),
   questionTimeMs: z.number().int().min(5_000).max(120_000),
-  prizeAmounts: z.array(z.string()).min(1),
+  prizeAmounts: z.array(prizeAmountSchema).min(1).max(MAX_PRIZE_RANKS),
   minParticipants: z.number().int().min(1).max(100_000).optional(),
   lobbyOpenLeadMs: z.number().int().min(60_000).max(60 * 60_000).optional(),
   difficulty: z.enum(["EASY", "MEDIUM", "HARD"]).optional(),

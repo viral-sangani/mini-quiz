@@ -4,6 +4,7 @@ import {
   createWalletClient,
   encodeFunctionData,
   http,
+  isAddress,
   parseUnits,
   WaitForTransactionReceiptTimeoutError,
   type Address,
@@ -51,6 +52,11 @@ const publicClient = createPublicClient({
 
 const log = pino({ level: config.LOG_LEVEL });
 
+async function sleep(ms: number): Promise<void> {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function requestPayoutBroadcast(payoutId: string): Promise<void> {
   if (config.APP_ROLE === "worker" || config.APP_ROLE === "payout-worker") {
     await runPayoutBroadcast(payoutId);
@@ -58,6 +64,28 @@ async function requestPayoutBroadcast(payoutId: string): Promise<void> {
   }
   const queued = await publishWorkerCommand({ type: "broadcast_payout", payoutId });
   if (!queued) await runPayoutBroadcast(payoutId);
+}
+
+async function requestQuizPayoutBroadcast(quizId: string): Promise<void> {
+  if (config.APP_ROLE === "worker" || config.APP_ROLE === "payout-worker") {
+    await runQuizPayoutBroadcast(quizId);
+    return;
+  }
+  const queued = await publishWorkerCommand({ type: "broadcast_quiz_payouts", quizId });
+  if (!queued) await runQuizPayoutBroadcast(quizId);
+}
+
+async function waitForSenderNonce(
+  address: Address,
+  targetNonce: number,
+): Promise<void> {
+  const deadline = Date.now() + config.PAYOUT_BURST_WINDOW_NONCE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const nonce = await publicClient.getTransactionCount({ address });
+    if (nonce >= targetNonce) return;
+    await sleep(config.PAYOUT_BURST_WINDOW_NONCE_POLL_MS);
+  }
+  throw new Error(`Timed out waiting for treasury nonce to reach ${targetNonce}`);
 }
 
 export function treasuryAccount() {
@@ -90,6 +118,7 @@ export async function enqueueAutoPayouts(quizId: string): Promise<void> {
     capLimit: false,
   });
   const payoutCount = Math.min(winnersCount, rows.length);
+  let approvedCreated = 0;
   for (let i = 0; i < payoutCount; i++) {
     const rank = i + 1;
     const row = rows[i];
@@ -136,6 +165,7 @@ export async function enqueueAutoPayouts(quizId: string): Promise<void> {
         status: "APPROVED",
       },
     });
+    approvedCreated++;
     broadcast(quizId, {
       type: "payout_pending",
       payoutId: payout.id,
@@ -143,10 +173,11 @@ export async function enqueueAutoPayouts(quizId: string): Promise<void> {
       userId: row.userId,
       amount,
     });
-    // Fire on-chain transfer in the worker when Redis is available; local/dev
-    // without Redis falls back to inline background processing.
-    void requestPayoutBroadcast(payout.id);
   }
+  // Fire the quiz's approved payout rows as one nonce-managed burst. This
+  // preserves one ledger row + tx hash per winner, but avoids queueing 500
+  // worker commands that would serialize the whole payout run.
+  if (approvedCreated > 0) void requestQuizPayoutBroadcast(quizId);
 }
 
 // Sign + broadcast an APPROVED payout. Splits the chain-side work out of
@@ -303,6 +334,252 @@ export async function runPayoutBroadcast(payoutId: string): Promise<void> {
     txHash,
   });
   void confirmPayoutInBackground(payout.id);
+}
+
+export async function runQuizPayoutBroadcast(quizId: string): Promise<void> {
+  const candidates = await prisma.payout.findMany({
+    where: { quizId, status: "APPROVED" },
+    include: { user: true },
+    orderBy: { rank: "asc" },
+  });
+  if (candidates.length === 0) return;
+
+  const claimedIds: string[] = [];
+  for (const candidate of candidates) {
+    const claimed = await prisma.payout.updateMany({
+      where: { id: candidate.id, status: "APPROVED" },
+      data: { status: "BROADCASTING", failureReason: null },
+    });
+    if (claimed.count === 1) claimedIds.push(candidate.id);
+  }
+  if (claimedIds.length === 0) return;
+
+  const claimed = await prisma.payout.findMany({
+    where: {
+      id: { in: claimedIds },
+      status: "BROADCASTING",
+      txHash: null,
+    },
+    include: { user: true },
+    orderBy: { rank: "asc" },
+  });
+  if (claimed.length === 0) return;
+
+  const sendable: Array<{
+    payout: (typeof claimed)[number];
+    tx: { to: Address; value?: bigint; data?: Hex };
+  }> = [];
+
+  for (const payout of claimed) {
+    if (!payout.user.walletAddress || !isAddress(payout.user.walletAddress)) {
+      await prisma.payout.update({
+        where: { id: payout.id },
+        data: {
+          status: "FAILED",
+          failureReason: "Winner has no valid walletAddress",
+        },
+      });
+      broadcast(payout.quizId, {
+        type: "payout_failed",
+        payoutId: payout.id,
+        rank: payout.rank,
+        userId: payout.userId,
+        amount: payout.amount,
+        reason: "invalid_wallet",
+      });
+      continue;
+    }
+
+    const token = getPayoutTokenByAddress(payout.tokenAddress);
+    if (!token) {
+      await prisma.payout.update({
+        where: { id: payout.id },
+        data: {
+          status: "FAILED",
+          failureReason: `Unknown payout token address: ${payout.tokenAddress}`,
+        },
+      });
+      broadcast(payout.quizId, {
+        type: "payout_failed",
+        payoutId: payout.id,
+        rank: payout.rank,
+        userId: payout.userId,
+        amount: payout.amount,
+        reason: "unknown_token",
+      });
+      continue;
+    }
+
+    try {
+      const winner = payout.user.walletAddress;
+      const value = parseUnits(payout.amount, token.decimals);
+      const tx = token.isNative
+        ? { to: winner, value }
+        : {
+            to: token.address!,
+            data: encodeFunctionData({
+              abi: ERC20_TRANSFER_ABI,
+              functionName: "transfer",
+              args: [winner, value],
+            }),
+          };
+      sendable.push({ payout, tx });
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      await prisma.payout.update({
+        where: { id: payout.id },
+        data: {
+          status: "FAILED",
+          failureReason: reason,
+        },
+      });
+      broadcast(payout.quizId, {
+        type: "payout_failed",
+        payoutId: payout.id,
+        rank: payout.rank,
+        userId: payout.userId,
+        amount: payout.amount,
+        reason,
+      });
+    }
+  }
+
+  if (sendable.length === 0) return;
+
+  const account = treasuryAccount();
+  const walletClient = createWalletClient({
+    account,
+    chain: celo,
+    transport: http(config.CELO_RPC_URL),
+  });
+  const windowSize =
+    config.PAYOUT_BURST_WINDOW_SIZE > 0
+      ? config.PAYOUT_BURST_WINDOW_SIZE
+      : sendable.length;
+  const concurrency = Math.min(config.PAYOUT_BURST_CONCURRENCY, windowSize);
+
+  await withTreasuryLock(
+    account.address,
+    async () => {
+      resetNonce(account.address);
+      try {
+        const firstNonce = await publicClient.getTransactionCount({
+          address: account.address,
+          blockTag: "pending",
+        });
+        log.info(
+          {
+            quizId,
+            count: sendable.length,
+            firstNonce,
+            windowSize,
+            concurrency,
+          },
+          "broadcasting quiz payouts in nonce-managed burst",
+        );
+
+        for (let windowStart = 0; windowStart < sendable.length; windowStart += windowSize) {
+          const windowEnd = Math.min(windowStart + windowSize, sendable.length);
+          const windowNext = { value: windowStart };
+
+          async function windowWorker(): Promise<void> {
+            while (windowNext.value < windowEnd) {
+              const index = windowNext.value++;
+              const item = sendable[index]!;
+              const nonce = firstNonce + index;
+              try {
+                const hash = await walletClient.sendTransaction({
+                  ...item.tx,
+                  nonce,
+                } as Parameters<typeof walletClient.sendTransaction>[0]);
+                await prisma.payout.updateMany({
+                  where: {
+                    id: item.payout.id,
+                    status: "BROADCASTING",
+                    txHash: null,
+                  },
+                  data: { status: "BROADCAST", txHash: hash },
+                });
+                broadcast(item.payout.quizId, {
+                  type: "payout_approved",
+                  payoutId: item.payout.id,
+                  rank: item.payout.rank,
+                  userId: item.payout.userId,
+                  amount: item.payout.amount,
+                  txHash: hash,
+                });
+                void confirmPayoutInBackground(item.payout.id);
+              } catch (e) {
+                const reason = e instanceof Error ? e.message : String(e);
+                if (classifySendError(e) === "AMBIGUOUS") {
+                  await prisma.payout.updateMany({
+                    where: {
+                      id: item.payout.id,
+                      status: "BROADCASTING",
+                      txHash: null,
+                    },
+                    data: {
+                      failureReason: `ambiguous send (left in-flight): ${reason}`,
+                    },
+                  });
+                  log.error(
+                    {
+                      payoutId: item.payout.id,
+                      quizId,
+                      rank: item.payout.rank,
+                      nonce,
+                      reason,
+                    },
+                    "bulk payout send outcome AMBIGUOUS; leaving row BROADCASTING",
+                  );
+                  continue;
+                }
+                await prisma.payout.updateMany({
+                  where: {
+                    id: item.payout.id,
+                    status: "BROADCASTING",
+                    txHash: null,
+                  },
+                  data: { status: "FAILED", failureReason: reason },
+                });
+                broadcast(item.payout.quizId, {
+                  type: "payout_failed",
+                  payoutId: item.payout.id,
+                  rank: item.payout.rank,
+                  userId: item.payout.userId,
+                  amount: item.payout.amount,
+                  reason,
+                });
+              }
+            }
+          }
+
+          await Promise.all(
+            Array.from(
+              { length: Math.min(concurrency, windowEnd - windowStart) },
+              () => windowWorker(),
+            ),
+          );
+
+          if (config.PAYOUT_BURST_WINDOW_WAIT_FOR_MINED) {
+            await waitForSenderNonce(account.address, firstNonce + windowEnd);
+            log.info(
+              {
+                quizId,
+                windowStart: windowStart + 1,
+                windowEnd,
+                targetNonce: firstNonce + windowEnd,
+              },
+              "quiz payout window mined",
+            );
+          }
+        }
+      } finally {
+        resetNonce(account.address);
+      }
+    },
+    log,
+  );
 }
 
 // Number of send attempts. We only ever retry on a classified nonce error
@@ -511,7 +788,7 @@ export async function confirmPayoutInBackground(payoutId: string): Promise<void>
   try {
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: payout.txHash as Hex,
-      timeout: 90_000,
+      timeout: config.PAYOUT_BURST_RECEIPT_TIMEOUT_MS,
     });
     if (receipt.status === "success") {
       await prisma.payout.update({

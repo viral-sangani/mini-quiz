@@ -2,7 +2,11 @@ import pino from "pino";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { evaluateBadgesAfterQuiz } from "./services/badge.service.js";
-import { enqueueAutoPayouts, runPayoutBroadcast } from "./services/payout.service.js";
+import {
+  enqueueAutoPayouts,
+  runPayoutBroadcast,
+  runQuizPayoutBroadcast,
+} from "./services/payout.service.js";
 import {
   startWorkerCommandListener,
   stopWorkerCommands,
@@ -19,6 +23,9 @@ async function handleCommand(command: WorkerCommand): Promise<void> {
       break;
     case "broadcast_payout":
       await runPayoutBroadcast(command.payoutId);
+      break;
+    case "broadcast_quiz_payouts":
+      await runQuizPayoutBroadcast(command.quizId);
       break;
   }
 }

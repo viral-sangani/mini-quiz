@@ -56,6 +56,19 @@ const schema = z.object({
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .default("info"),
+  PAYOUT_BURST_CONCURRENCY: z.coerce.number().int().positive().default(100),
+  PAYOUT_BURST_WINDOW_SIZE: z.coerce.number().int().nonnegative().default(100),
+  PAYOUT_BURST_WINDOW_WAIT_FOR_MINED: z
+    .string()
+    .optional()
+    .transform((v) => v !== "false"),
+  PAYOUT_BURST_WINDOW_NONCE_POLL_MS: z.coerce.number().int().positive().default(100),
+  PAYOUT_BURST_WINDOW_NONCE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
+  PAYOUT_BURST_RECEIPT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
   // OpenRouter for AI question generation. Optional so the api can boot
   // without a key — the /admin/ai/generate-questions route returns a clean
   // 503 if missing instead of crashing on import.

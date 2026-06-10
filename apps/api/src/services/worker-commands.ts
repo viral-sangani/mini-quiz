@@ -3,7 +3,8 @@ import { createRedisClient, readyRedis } from "./redis.js";
 
 export type WorkerCommand =
   | { type: "process_quiz_end"; quizId: string }
-  | { type: "broadcast_payout"; payoutId: string };
+  | { type: "broadcast_payout"; payoutId: string }
+  | { type: "broadcast_quiz_payouts"; quizId: string };
 
 const QUEUE = "worker:commands";
 let pub = createRedisClient("worker-command-pub");

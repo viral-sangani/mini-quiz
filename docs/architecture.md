@@ -208,10 +208,13 @@ falls back to the DB aggregation path.
    - Reads top-N from `leaderboard(quizId)` where N =
      `quiz.prizeAmounts.length`.
    - For each ranked player with `walletAddress != null`: creates
-     `Payout` row at `APPROVED`, then the worker signs + sends the prize token
-     transfer via viem. ERC-20 prize transfers omit `feeCurrency`, so gas is paid in CELO
-     and exact USDT/USDC prize balances can be sent without the gas fee
-     reducing that same token first.
+     `Payout` row at `APPROVED`.
+   - The payout worker claims the quiz's approved rows and broadcasts them in
+     nonce-managed windows from the treasury private key. Each winner still has
+     one ledger row and one transaction hash, but 500 payouts are sent as a
+     burst instead of 500 serialized worker commands. ERC-20 prize transfers
+     omit `feeCurrency`, so gas is paid in CELO and exact USDT/USDC prize
+     balances can be sent without the gas fee reducing that same token first.
    - On success: row → `CONFIRMED` with `txHash`.
    - On failure: row → `FAILED` with `failureReason`. Admin can
      retry via `POST /admin/payouts/:id/approve`.
@@ -220,9 +223,14 @@ falls back to the DB aggregation path.
 The scheduler/finalizer runs in the single `api-worker` pod, while payout
 transfer commands run in the single `api-payout-worker` pod. Admin manual
 payout retries publish worker commands when Redis is available and fall back to
-inline processing only for local/dev without Redis. Final standings are read
-from Postgres-backed leaderboard aggregation after the quiz is `ENDED`; Redis
-live scores are hot-path state, not payout truth.
+inline processing only for local/dev without Redis. Bulk quiz-end broadcasts are
+tuned with `PAYOUT_BURST_CONCURRENCY`, `PAYOUT_BURST_WINDOW_SIZE`,
+`PAYOUT_BURST_WINDOW_WAIT_FOR_MINED`,
+`PAYOUT_BURST_WINDOW_NONCE_POLL_MS`,
+`PAYOUT_BURST_WINDOW_NONCE_TIMEOUT_MS`, and
+`PAYOUT_BURST_RECEIPT_TIMEOUT_MS`. Final standings are read from
+Postgres-backed leaderboard aggregation after the quiz is `ENDED`; Redis live
+scores are hot-path state, not payout truth.
 
 ## Environment variables
 
@@ -236,6 +244,8 @@ boot). Frontend env vars in each app's `next.config.mjs` and
   `.env` (gitignored). `OPENROUTER_API_KEY` powers admin AI generation, and
   `DIGITALOCEAN_TOKEN` also lives here for the capacity prewarmer. To
   regenerate: see `runbooks.md`.
+- **Static API env**: `deploy/charts/api/values.yaml` contains non-secret
+  runtime tuning, including payout burst concurrency/window settings.
 - **Vercel**: project Environment Variables panel for `apps/quiz` and
   `apps/admin`. Set `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`.
 - **Cluster-injected**: `PGUSER`, `PGPASSWORD`, `REDIS_PASSWORD`,

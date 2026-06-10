@@ -159,6 +159,12 @@ env:
   NODE_ENV: production
   PORT: "4000"
   LOG_LEVEL: info
+  PAYOUT_BURST_CONCURRENCY: "100"
+  PAYOUT_BURST_WINDOW_SIZE: "100"
+  PAYOUT_BURST_WINDOW_WAIT_FOR_MINED: "true"
+  PAYOUT_BURST_WINDOW_NONCE_POLL_MS: "100"
+  PAYOUT_BURST_WINDOW_NONCE_TIMEOUT_MS: "60000"
+  PAYOUT_BURST_RECEIPT_TIMEOUT_MS: "180000"
 
 # Secrets — references to existing Secrets in the cluster.
 # - api-secrets: produced by `kubeseal` from deploy/manifests/sealed-secrets/api-secrets.yaml
