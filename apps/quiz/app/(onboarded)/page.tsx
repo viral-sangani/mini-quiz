@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { PublicQuiz } from "@mini-quiz/shared";
@@ -85,6 +86,23 @@ export default function HomePage() {
             color="var(--gold)"
           />
         </div>
+      </div>
+
+      <div style={{ padding: "0 16px 12px" }}>
+        <Image
+          src="/football-championship-banner.png"
+          alt="Football Championship"
+          width={337}
+          height={63}
+          priority
+          sizes="(max-width: 720px) calc(100vw - 32px), 688px"
+          style={{
+            display: "block",
+            width: "100%",
+            height: "auto",
+            borderRadius: 8,
+          }}
+        />
       </div>
 
       {/* Live now hero */}
