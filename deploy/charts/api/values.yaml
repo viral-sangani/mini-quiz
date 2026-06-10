@@ -1,6 +1,6 @@
 image:
   repository: docker.io/viralsangani/miniquiz-api
-  tag: "b6dab62e209d"
+  tag: "a489fcd48a39"
   pullPolicy: IfNotPresent
 
 # Set to a Secret with .dockerconfigjson if the image is private.
