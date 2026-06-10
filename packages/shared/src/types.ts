@@ -139,6 +139,23 @@ export type AdminUser = {
   createdAt: string;
 };
 
+export type AdminUsersStats = {
+  totalPlayers: number;
+  totalAdmins: number;
+  playersLast24h: number;
+  walletsConnected: number;
+  totalMatchesPlayed: number;
+};
+
+export type AdminUsersResponse = {
+  users: AdminUser[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  stats: AdminUsersStats;
+};
+
 // Admin overview dashboard payload — see /admin/stats. All money values are
 // USDT decimal strings to avoid float drift. UTC-day boundaries.
 export type AdminStats = {

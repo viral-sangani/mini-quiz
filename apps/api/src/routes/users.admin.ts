@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { AdminUser } from "@mini-quiz/shared";
+import type { AdminUser, AdminUsersStats } from "@mini-quiz/shared";
 import { requireAdmin } from "../auth.js";
 import { Prisma, prisma } from "../db.js";
 
@@ -8,10 +8,9 @@ const roleSchema = z.object({ role: z.enum(["USER", "ADMIN"]) });
 const flagSchema = z.object({ reason: z.string().min(1).max(500) });
 const listUsersQuerySchema = z.object({
   q: z.string().optional(),
-  flagged: z.enum(["true", "false"]).optional(),
   page: z.coerce.number().int().min(1).optional(),
   role: z.enum(["USER", "ADMIN"]).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
 });
 
 type UserRow = Awaited<ReturnType<typeof prisma.user.findMany>>[number];
@@ -36,7 +35,9 @@ function serialize(u: UserRow): AdminUser {
 }
 
 export async function adminUserRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: { q?: string; flagged?: string; page?: string; role?: string; limit?: string } }>(
+  app.get<{
+    Querystring: { q?: string; page?: string; role?: string; limit?: string };
+  }>(
     "/admin/users",
     async (req, reply) => {
       const admin = await requireAdmin(req, reply);
@@ -46,12 +47,12 @@ export async function adminUserRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: parsed.error.flatten() });
       }
       const q = parsed.data.q?.trim();
-      const onlyFlagged = parsed.data.flagged === "true";
       const page = parsed.data.page ?? 1;
-      const limit = parsed.data.limit ?? 200;
+      const limit = parsed.data.limit ?? 10;
+      const role = parsed.data.role ?? "USER";
       const where: Prisma.UserWhereInput = {
         deletedAt: null,
-        ...(parsed.data.role ? { role: parsed.data.role } : {}),
+        role,
         ...(q
           ? {
               OR: [
@@ -62,23 +63,53 @@ export async function adminUserRoutes(app: FastifyInstance) {
               ],
             }
           : {}),
-        ...(onlyFlagged ? { flagged: true } : {}),
       };
-      const [total, rows] = await prisma.$transaction([
+      const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const [
+        total,
+        rows,
+        totalPlayers,
+        totalAdmins,
+        playersLast24h,
+        walletsConnected,
+        totalMatchesPlayed,
+      ] = await prisma.$transaction([
         prisma.user.count({ where }),
         prisma.user.findMany({
           where,
-          orderBy: [{ role: "desc" }, { createdAt: "desc" }],
+          orderBy: { createdAt: "desc" },
           skip: (page - 1) * limit,
           take: limit,
         }),
+        prisma.user.count({ where: { role: "USER", deletedAt: null } }),
+        prisma.user.count({ where: { role: "ADMIN", deletedAt: null } }),
+        prisma.user.count({
+          where: { role: "USER", deletedAt: null, createdAt: { gte: since24h } },
+        }),
+        prisma.user.count({
+          where: { role: "USER", deletedAt: null, walletAddress: { not: null } },
+        }),
+        prisma.roomPlayer.count({
+          where: {
+            quiz: { kind: "LIVE" },
+            user: { role: "USER", deletedAt: null },
+          },
+        }),
       ]);
+      const stats: AdminUsersStats = {
+        totalPlayers,
+        totalAdmins,
+        playersLast24h,
+        walletsConnected,
+        totalMatchesPlayed,
+      };
       return {
         users: rows.map(serialize),
         page,
         limit,
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
+        stats,
       };
     },
   );

@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: **2026-05-25** (DigitalOcean Load Balancer entrypoint).
+> Last updated: **2026-06-10** (database index pass for scale).
 > Update triggers: new service, new request flow, schema change, on-chain
 > change, scaling change. See `maintenance.md`.
 
@@ -142,6 +142,12 @@ read the schema. Key relationships at a glance:
   Auto-payouts skip PENDING — they're created at APPROVED.
 - `Quiz.prizeAmounts` is a `String[]` of human-readable USDT amounts;
   index `i` maps to leaderboard rank `i+1`.
+
+Indexing is intentionally query-shaped in `schema.prisma`: live answer
+aggregation, scheduler status/date scans, payout worker/admin lookups, global
+leaderboards, profile counters, and practice rollups should stay aligned with
+their composite indexes. When those query shapes change, review the indexes in
+the same PR; partitions are still a future step once table size/load demands it.
 
 ## Request flows
 

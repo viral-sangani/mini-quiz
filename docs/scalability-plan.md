@@ -1,6 +1,6 @@
 # Scalability plan
 
-> Last updated: **2026-05-22**.
+> Last updated: **2026-06-10**.
 > Scope: roadmap for 50k-100k DAUs and high-concurrency live games.
 > Explicit exclusion: this document does **not** include Postgres backups to R2.
 
@@ -21,7 +21,7 @@ Cloudflare in front. The target is 100k-ready architecture shipped through
 | Realtime | Dedicated SSE gateway pods on DOKS |
 | Event spine | NATS JetStream stores room events, accepted answers, and payout event subjects |
 | Scheduler | 1s tick in the worker pod only |
-| Database | Single CNPG Postgres primary behind a CNPG PgBouncer Pooler for app traffic |
+| Database | Single CNPG Postgres primary behind a CNPG PgBouncer Pooler for app traffic; Prisma schema carries query-shaped composite indexes for current hot paths |
 | Cache/rate limit | Single Redis master; rate limits, worker-command fallback, and hot live scores |
 | Ingress | Cloudflare to one DOKS node via ingress-nginx host networking |
 | Autoscaling | API, realtime, and score-worker HPAs scale independently; scheduler worker stays 1 |
@@ -39,6 +39,10 @@ Cloudflare in front. The target is 100k-ready architecture shipped through
 - **Answer ingest still writes Postgres inline**: the API now publishes accepted
   answers to JetStream for async scoring, but still writes `Answer` before
   queue publish so DB remains the source of truth.
+- **Postgres is indexed, not partitioned**: current scale posture is composite
+  indexing around the hot query shapes. Partitioning `Answer`/`Payout` remains a
+  later step once production row counts or write amplification justify the
+  operational cost.
 - **Observability is still basic**: metrics-server exists, but production event
   lag, consumer lag, and SSE connection dashboards are still follow-up work.
 

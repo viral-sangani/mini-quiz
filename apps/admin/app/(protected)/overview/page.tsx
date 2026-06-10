@@ -257,32 +257,20 @@ export default function OverviewPage() {
                 <h3>Needs attention</h3>
               </div>
               <div>
-                {stats?.attention.failedPayouts.count === 0 &&
-                stats?.attention.flaggedUsers === 0 ? (
+                {stats?.attention.failedPayouts.count === 0 ? (
                   <div style={{ padding: 18, color: "var(--a-ink-faint)", fontSize: 13 }}>
                     Nothing here. Nice and quiet.
                   </div>
                 ) : (
-                  <>
-                    {stats && stats.attention.failedPayouts.count > 0 && (
-                      <Attention
-                        icon="alert"
-                        tone="wrong"
-                        title={`${stats.attention.failedPayouts.count} payouts failed`}
-                        sub={`$${stats.attention.failedPayouts.sumUsdt} stuck — retry or investigate`}
-                        href="/payouts?status=FAILED"
-                      />
-                    )}
-                    {stats && stats.attention.flaggedUsers > 0 && (
-                      <Attention
-                        icon="flag"
-                        tone="berry"
-                        title={`${stats.attention.flaggedUsers} flagged players`}
-                        sub="Review the moderation queue"
-                        href="/players?flagged=true"
-                      />
-                    )}
-                  </>
+                  stats && stats.attention.failedPayouts.count > 0 && (
+                    <Attention
+                      icon="alert"
+                      tone="wrong"
+                      title={`${stats.attention.failedPayouts.count} payouts failed`}
+                      sub={`$${stats.attention.failedPayouts.sumUsdt} stuck — retry or investigate`}
+                      href="/payouts?status=FAILED"
+                    />
+                  )
                 )}
               </div>
             </div>
@@ -342,8 +330,8 @@ function Attention({
   sub,
   href,
 }: {
-  icon: "alert" | "cash" | "flag";
-  tone: "wrong" | "accent" | "berry";
+  icon: "alert" | "cash";
+  tone: "wrong" | "accent";
   title: string;
   sub: string;
   href: string;
@@ -351,12 +339,10 @@ function Attention({
   const colors: Record<typeof tone, string> = {
     wrong: "var(--a-wrong)",
     accent: "var(--a-accent)",
-    berry: "var(--a-berry)",
   };
   const tints: Record<typeof tone, string> = {
     wrong: "var(--a-wrong-tint)",
     accent: "var(--a-accent-tint)",
-    berry: "var(--a-berry-tint)",
   };
   return (
     <Link
