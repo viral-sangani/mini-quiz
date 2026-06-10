@@ -38,7 +38,9 @@ export async function aiGenAdminRoutes(app: FastifyInstance) {
       if (e instanceof AiGenerationDisabledError) {
         return reply
           .code(503)
-          .send({ error: "AI generation not configured (MOONSHOT_API_KEY missing)" });
+          .send({
+            error: "AI generation not configured (OPENROUTER_API_KEY missing)",
+          });
       }
       req.log.error({ err: e }, "AI generation failed");
       return reply.code(502).send({
@@ -61,7 +63,9 @@ export async function aiGenAdminRoutes(app: FastifyInstance) {
       if (e instanceof AiGenerationDisabledError) {
         return reply
           .code(503)
-          .send({ error: "AI generation not configured (MOONSHOT_API_KEY missing)" });
+          .send({
+            error: "AI generation not configured (OPENROUTER_API_KEY missing)",
+          });
       }
       req.log.error({ err: e }, "AI topic suggestion failed");
       return reply.code(502).send({

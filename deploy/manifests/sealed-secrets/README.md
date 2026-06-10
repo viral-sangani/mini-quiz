@@ -27,6 +27,7 @@ stringData:
   ADMIN_EMAILS: "you@example.com"
   TREASURY_PRIVATE_KEY: "0x..."
   CELO_RPC_URL: "https://forno.celo.org"
+  OPENROUTER_API_KEY: "sk-or-v1-..."
   CORS_ORIGIN: "https://miniquiz.club,https://admin.miniquiz.club"
   LOG_LEVEL: "info"
 EOF

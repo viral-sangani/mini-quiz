@@ -230,8 +230,9 @@ boot). Frontend env vars in each app's `next.config.mjs` and
 - **DOKS**: SealedSecret `api-secrets` in the `api` namespace.
   Source-of-truth ciphertext in
   `deploy/manifests/sealed-secrets/api-secrets.yaml`. Plaintext in
-  `.env` (gitignored). `DIGITALOCEAN_TOKEN` also lives here for the capacity
-  prewarmer. To regenerate: see `runbooks.md`.
+  `.env` (gitignored). `OPENROUTER_API_KEY` powers admin AI generation, and
+  `DIGITALOCEAN_TOKEN` also lives here for the capacity prewarmer. To
+  regenerate: see `runbooks.md`.
 - **Vercel**: project Environment Variables panel for `apps/quiz` and
   `apps/admin`. Set `NEXT_PUBLIC_API_BASE_URL=https://api.miniquiz.club`.
 - **Cluster-injected**: `PGUSER`, `PGPASSWORD`, `REDIS_PASSWORD`,

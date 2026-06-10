@@ -102,6 +102,7 @@ stringData:
   ADMIN_EMAILS: "$ADMIN_EMAILS"
   TREASURY_PRIVATE_KEY: "$TREASURY_PRIVATE_KEY"
   CELO_RPC_URL: "$CELO_RPC_URL"
+  OPENROUTER_API_KEY: "$OPENROUTER_API_KEY"
   CORS_ORIGIN: "https://miniquiz.club,https://admin.miniquiz.club"
   LOG_LEVEL: "info"
 EOF

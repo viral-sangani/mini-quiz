@@ -245,7 +245,8 @@ Two layers:
 
 2. **Runtime secrets** (sealed at rest in git):
    - `api-secrets` (api ns): `NEXTAUTH_SECRET`, `ADMIN_EMAILS`,
-     `TREASURY_PRIVATE_KEY`, `CELO_RPC_URL`, `CORS_ORIGIN`, `LOG_LEVEL`
+     `TREASURY_PRIVATE_KEY`, `CELO_RPC_URL`, `OPENROUTER_API_KEY`,
+     `CORS_ORIGIN`, `LOG_LEVEL`
    - `redis-auth` (data ns + api ns mirror): `password`
    - `miniquiz-pg-app` (api ns mirror): `username`, `password`
      (CNPG generates the original in `data` ns)
