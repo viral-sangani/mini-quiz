@@ -24,10 +24,10 @@ const PAGE_SIZE = 10;
 
 type UsersResponse = {
   users: AdminUser[];
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
+  page?: number;
+  limit?: number;
+  total?: number;
+  totalPages?: number;
 };
 
 export default function PlayersPage() {
@@ -59,12 +59,17 @@ export default function PlayersPage() {
       const data = await adminApi.get<UsersResponse>(
         `/admin/users${params.toString() ? `?${params}` : ""}`,
       );
-      setUsers(data.users);
+      const loadedUsers = data.users ?? [];
+      const responsePage = data.page ?? eff.page ?? page;
+      const responseLimit = data.limit ?? PAGE_SIZE;
+      const responseTotal = data.total ?? loadedUsers.length;
+      const responseTotalPages = data.totalPages ?? Math.max(1, Math.ceil(responseTotal / responseLimit));
+      setUsers(loadedUsers);
       setPagination({
-        page: data.page,
-        limit: data.limit,
-        total: data.total,
-        totalPages: data.totalPages,
+        page: responsePage,
+        limit: responseLimit,
+        total: responseTotal,
+        totalPages: responseTotalPages,
       });
       setError(null);
     } catch (e) {
